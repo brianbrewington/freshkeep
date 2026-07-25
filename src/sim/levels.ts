@@ -1,4 +1,5 @@
 import type { LevelSpec, WallSpec } from './level.js';
+import { BASICS } from './basics.js';
 
 const GATE_NAMES: Record<string, string> = {
   N: 'the north gate',
@@ -65,15 +66,12 @@ export const LEVELS: LevelSpec[] = [
     sizeMix: { S: 3, M: 2, L: 2 },
     // Wildly varying decay — the "twitchiest" bricks are mostly the big ones,
     // and the traffic is not there.
-    decayRateFor: (b, rng) =>
-      b.size === 'L' ? rng.logNormal(0.05, 0.5) : rng.logNormal(0.014, 0.7),
-    // The hidden truth: demand concentrates on SMALL, SLOW-decaying, top-course bricks.
-    demandWeightFor: (b) => {
-      const bySize = b.size === 'S' ? 9 : b.size === 'M' ? 2 : 0.4;
-      const bySpeed = b.decayRate < 0.02 ? 3 : 0.6;
-      const byCourse = b.course === 0 ? 1 : 0.5;
-      return bySize * bySpeed * byCourse;
-    },
+    decayRateFor: (b, rng, cfg) =>
+      b.size === 'L' ? rng.logNormal(cfg.decayMedian * 3.5, 0.5) : rng.logNormal(cfg.decayMedian, 0.7),
+    // The hidden truth, now VISIBLE if you watch: the traffic pours onto the
+    // narrow bricks. Big arcs look like they must matter and catch almost nothing.
+    lobeAnchor: 'small',
+    config: { demandPeakiness: 1.4, demandLobes: 4 },
     modes: ['rulebook'],
   },
 
@@ -97,7 +95,8 @@ export const LEVELS: LevelSpec[] = [
     // Cornerstones crumble FAST. Hubs have to be structurally decisive, not merely
     // present: if they decayed like everything else, a policy could ignore them and
     // still win, and the level would teach nothing about shared masonry.
-    decayRateFor: (b, rng) => (b.hub ? rng.logNormal(0.05, 0.3) : rng.logNormal(0.033, 0.85)),
+    decayRateFor: (b, rng, cfg) =>
+      b.hub ? rng.logNormal(cfg.decayMedian * 1.5, 0.3) : rng.logNormal(cfg.decayMedian, 0.85),
     // This level is where the thesis button is argued, so it is tuned to sit
     // exactly on the knee: 16 masons holds on every seed, 8 falls on every seed.
     // One click, same policy, same siege, opposite outcome.
@@ -141,9 +140,9 @@ export const LEVELS: LevelSpec[] = [
     // is not enough: decay is what generates mason-work, so if every wall decays
     // at the same rate every crew stays busy and nobody visibly idles.
     walls: FOUR(12, 2, [7, 1, 7, 1]),
-    decayRateFor: (b, rng) => {
+    decayRateFor: (b, rng, cfg) => {
       const busy = b.wallIds.includes('N') || b.wallIds.includes('S');
-      return rng.logNormal(busy ? 0.03 : 0.004, 0.7);
+      return rng.logNormal(busy ? cfg.decayMedian * 2.5 : cfg.decayMedian * 0.33, 0.7);
     },
     demandRate: 1.0,
     hubsPerCorner: 0,
@@ -166,11 +165,15 @@ export const LEVELS: LevelSpec[] = [
     masons: 12,
     courses: 3,
     walls: FOUR(12, 2),
-    demandRate: 1.3,
+    demandRate: 1.7,
     hubsPerCorner: 2,
     keepBricks: 16,
     sizeMix: { S: 2, M: 3, L: 2 },
     culling: { everySeconds: 90, count: 2, floor: 2 },
+    // The keep turns back more here than anywhere else, because this is the level
+    // where abandoning the perimeter has to be the RIGHT answer rather than a
+    // consolation. At 0.6 the last line is a rounding error; at 0.85 it is a plan.
+    config: { keepRepelChance: 0.85 },
     modes: ['rulebook', 'zones', 'auction'],
   },
 ];
@@ -193,7 +196,7 @@ export const SANDBOX: LevelSpec = {
   modes: ['rulebook', 'zones', 'auction'],
 };
 
-export const ALL_LEVELS: LevelSpec[] = [...LEVELS, SANDBOX];
+export const ALL_LEVELS: LevelSpec[] = [...BASICS, ...LEVELS, SANDBOX];
 
 export function getLevel(idOrIndex: string | number): LevelSpec {
   if (typeof idOrIndex === 'number') {

@@ -94,7 +94,13 @@ export interface Config {
   decayMedian: number;
   /** Log-normal sigma. Bigger = wilder spread of decay rates. */
   decaySigma: number;
-  /** Thresholds the DSL's named speeds (`slow`/`medium`/`fast`) resolve to. */
+  /**
+   * Thresholds the DSL's named speeds (`slow`/`medium`/`fast`) resolve to, and
+   * the buckets the drain pips are drawn from. Derived from `decayMedian` unless
+   * a level sets them explicitly — otherwise a level that raises decay makes
+   * every brick "fast", every pip red, and `decayRate > fast` match everything.
+   * The names have to mean fast RELATIVE TO THIS KINGDOM.
+   */
   decayNamed: { slow: number; medium: number; fast: number };
 
   // --- Scoring ------------------------------------------------------------
@@ -105,17 +111,22 @@ export interface Config {
   auctionDistanceScale: number;
 
   /**
-   * How heavy-tailed real demand is: traffic ∝ throughput ** demandExponent.
+   * How peaked real demand is over BEARING. 0 = flat: arrivals spread evenly
+   * around each sector, so a brick's traffic is exactly its arc. Above 0,
+   * arrivals concentrate into `demandLobes` lobes with Zipf weights
+   * `1/(i+1)^demandPeakiness` — a few bearings carry most of the queries, which
+   * is what request traffic actually looks like.
    *
-   * Default 1.0 — traffic is exactly the spec's S/M/L weight of 1/3/9.
-   *
-   * Raising it was tried and rejected: a heavier tail makes size-greed CORRECT,
-   * and BIGGEST FIRST — which is supposed to be the bubble-game fallacy — becomes
-   * the strongest policy under scarcity. Size-greed has to fail because it ignores
-   * structural risk, travel and shared structure, not because size is a lie.
-   * Exposed as a sandbox knob, not a balance lever.
+   * This replaced the old `demandExponent` (traffic ∝ throughput^k). That knob
+   * was rejected because a heavier tail on SIZE makes size-greed correct, and
+   * BIGGEST FIRST — the bubble-game fallacy — became the strongest policy in the
+   * game. Peaking demand over angle instead leaves size honest while still giving
+   * a value-aware policy something to find, and unlike a hidden per-brick weight
+   * the player can actually SEE where the raiders come from.
    */
-  demandExponent: number;
+  demandPeakiness: number;
+  /** How many bearings carry the bulk of the traffic. */
+  demandLobes: number;
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -154,7 +165,8 @@ export const DEFAULT_CONFIG: Config = {
   rankValue: { top: 1.0, mid: 0.5, deep: 0.2 },
 
   auctionDistanceScale: 200,
-  demandExponent: 1.0,
+  demandPeakiness: 0,
+  demandLobes: 3,
 };
 
 export function damageState(integrity: number): 'intact' | 'weathered' | 'cracked' | 'rubble' {

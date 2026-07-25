@@ -1,5 +1,8 @@
 import {
   ALL_LEVELS,
+  BASICS,
+  LEVELS,
+  SANDBOX,
   DEFAULT_WEIGHTS,
   PRESETS,
   SOLUTIONS,
@@ -42,6 +45,7 @@ const ui = {
   restart: $<HTMLButtonElement>('restart'),
   showTasks: $<HTMLInputElement>('show-tasks'),
   showBids: $<HTMLInputElement>('show-bids'),
+  showDemand: $<HTMLInputElement>('show-demand'),
   bidsWrap: $<HTMLLabelElement>('bids-wrap'),
   levelName: $<HTMLSpanElement>('level-name'),
   clock: $<HTMLSpanElement>('clock'),
@@ -70,12 +74,20 @@ const state = {
 
 // --- population ------------------------------------------------------------
 
-for (const l of ALL_LEVELS) {
-  const o = document.createElement('option');
-  o.value = l.id;
-  o.textContent = `${l.id === 'sandbox' ? '★' : ALL_LEVELS.indexOf(l) + 1} — ${l.name}`;
-  ui.level.append(o);
+function addLevelGroup(label: string, levels: LevelSpec[], numbered: boolean): void {
+  const g = document.createElement('optgroup');
+  g.label = label;
+  levels.forEach((l, i) => {
+    const o = document.createElement('option');
+    o.value = l.id;
+    o.textContent = numbered ? `${i + 1} — ${l.name}` : l.name;
+    g.append(o);
+  });
+  ui.level.append(g);
 }
+addLevelGroup('The basics — one mason, one idea', BASICS, false);
+addLevelGroup('The campaign', LEVELS, true);
+addLevelGroup('Sandbox', [SANDBOX], false);
 
 function populatePresets(levelId: string): void {
   ui.preset.replaceChildren();
@@ -160,6 +172,9 @@ function selectLevel(spec: LevelSpec): void {
   ui.masonsRange.value = String(spec.masons);
   ui.masonsOut.textContent = String(spec.masons);
   populatePresets(spec.id);
+  // A teaching level opens on the policy that fails it: watch it lose, then load
+  // the worked solution and watch the identical siege hold.
+  if (spec.wrongPreset) ui.preset.value = `preset:${spec.wrongPreset}`;
 
   for (const opt of Array.from(ui.mode.options)) {
     opt.disabled = !spec.modes.includes(opt.value as Mode);
@@ -266,7 +281,11 @@ function frame(now: number): void {
 function draw(): void {
   const sim = state.sim;
   if (!sim) return;
-  renderer.draw(sim, { showTasks: ui.showTasks.checked, showBids: ui.showBids.checked });
+  renderer.draw(sim, {
+    showTasks: ui.showTasks.checked,
+    showBids: ui.showBids.checked,
+    showDemand: ui.showDemand.checked,
+  });
 
   const k = sim.world.king;
   ui.clock.textContent = `${sim.world.t.toFixed(1)}s / ${sim.level.durationSeconds}s`;
@@ -453,6 +472,9 @@ ui.preset.addEventListener('change', () => {
   start();
 });
 ui.editor.addEventListener('input', () => currentPolicy());
+for (const el of [ui.showTasks, ui.showBids, ui.showDemand]) {
+  el.addEventListener('change', draw);
+}
 ui.masonsRange.addEventListener('input', () => {
   state.masons = Number(ui.masonsRange.value);
   ui.masonsOut.textContent = ui.masonsRange.value;
@@ -523,6 +545,6 @@ window.FRESHKEEP = {
 
 // --- go --------------------------------------------------------------------
 
-selectLevel(ALL_LEVELS[0]);
+selectLevel(BASICS[0]);
 resolveConfig(state.level);
 requestAnimationFrame(frame);

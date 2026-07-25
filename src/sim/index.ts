@@ -4,6 +4,7 @@ export * from './rng.js';
 export * from './events.js';
 export * from './level.js';
 export * from './levels.js';
+export * from './basics.js';
 export * from './sim.js';
 export * from './report.js';
 export * from './telemetry.js';

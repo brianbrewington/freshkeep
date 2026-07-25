@@ -1,6 +1,6 @@
-import type { Brick, CourseBand, Mason, Raider, World } from './types.js';
+import type { Brick, CourseBand, Mason, Raider, Wall, World } from './types.js';
 import { Config, courseBand, damageState, passProbability, DAMAGE_THRESHOLDS } from './config.js';
-import { BuildOptions, LevelSpec, buildWorld, resolveConfig } from './level.js';
+import { BuildOptions, LevelSpec, buildWorld, inSector, norm, resolveConfig } from './level.js';
 import { Rng } from './rng.js';
 import type { EvalCtx, Policy } from './policy/ir.js';
 import type { SimEvent } from './events.js';
@@ -208,6 +208,22 @@ export class Sim {
     }
   }
 
+  /** Draw a bearing inside this wall's sector, flat or lobed. */
+  private drawBearing(wall: Wall): number {
+    const width = norm(wall.angleEnd - wall.angleStart) || Math.PI * 2;
+    if (wall.lobes.length === 0) {
+      return norm(wall.angleStart + this.rngDemand.next() * width);
+    }
+    const lobe = this.rngDemand.pickWeighted(
+      wall.lobes,
+      wall.lobes.map((l) => l.weight),
+    );
+    // Keep the draw inside the sector so a lobe near the seam cannot leak into
+    // the neighbouring wall's traffic.
+    const offset = norm(lobe.angle + this.rngDemand.normal() * lobe.width - wall.angleStart);
+    return norm(wall.angleStart + Math.min(Math.max(offset, 0), width));
+  }
+
   private spawnOne(wallId: string): void {
     const wall = this.world.wallsById[wallId];
     const cw = this.cfg.courseWeights;
@@ -216,29 +232,29 @@ export class Sim {
     const band = this.rngDemand.pickWeighted(bandNames, [cw.top, cw.mid, cw.deep]);
     const course = this.courseForBand(band, wall.courses);
 
-    // Column choice follows the hidden demand weights, which need not track size.
-    const row = wall.grid[course];
-    const weights = row.map((id) => Math.max(1e-6, this.world.bricks[id].demandWeight));
-    const brickId = this.rngDemand.pickWeighted(row, weights);
-    const target = this.world.bricks[brickId];
+    // The bearing decides everything. Whichever brick spans this angle is the one
+    // that has to answer — no weighted sampling, just geometry.
+    const bearing = this.drawBearing(wall);
+    const target = this.brickAt(wall, course, bearing);
 
-    // A raider walks up to the FACE of the wall and is turned back there — it must
-    // never come to rest inside the masonry. Which course it queries still decides
-    // what defends it (the target set); it just does not walk in to find out.
-    const faceBrick = this.world.bricks[wall.grid[0][target.column]];
-    const fx = faceBrick.x + wall.nx * FACE_OFFSET;
-    const fy = faceBrick.y + wall.ny * FACE_OFFSET;
+    // The raider comes to rest at the FACE of the wall and is turned back there;
+    // it must never stop inside the masonry. Which course it queries still decides
+    // what defends it (the target set); it simply does not walk in to find out.
+    const faceR = this.world.ringOuter + FACE_OFFSET;
+    const cos = Math.cos(bearing);
+    const sin = Math.sin(bearing);
+    const king = this.world.king;
 
-    const margin = this.cfg.raiderSpawnMargin;
     const r: Raider = {
       id: this.world.nextRaiderId++,
       wallId,
+      angle: bearing,
       column: target.column,
       course,
-      x: fx + wall.nx * margin,
-      y: fy + wall.ny * margin,
-      tx: fx,
-      ty: fy,
+      x: king.x + cos * (faceR + this.cfg.raiderSpawnMargin),
+      y: king.y + sin * (faceR + this.cfg.raiderSpawnMargin),
+      tx: king.x + cos * faceR,
+      ty: king.y + sin * faceR,
       speed: this.cfg.raiderSpeed,
       state: 'approaching',
       phase: 'wall',
@@ -257,6 +273,27 @@ export class Sim {
     });
   }
 
+  /** The brick on this course whose arc contains the bearing. */
+  brickAt(wall: Wall, course: number, bearing: number): Brick {
+    const row = wall.grid[course] ?? wall.grid[0];
+    for (const id of row) {
+      const b = this.world.bricks[id];
+      if (inSector(bearing, norm(b.angle - b.angSpan / 2), norm(b.angle + b.angSpan / 2))) return b;
+    }
+    // Floating point can leave a hairline between arcs; fall back to nearest centre.
+    let best = this.world.bricks[row[0]];
+    let bestD = Infinity;
+    for (const id of row) {
+      const b = this.world.bricks[id];
+      const d = Math.abs(Math.atan2(Math.sin(bearing - b.angle), Math.cos(bearing - b.angle)));
+      if (d < bestD) {
+        bestD = d;
+        best = b;
+      }
+    }
+    return best;
+  }
+
   private courseForBand(band: CourseBand, courses: number): number {
     if (band === 'top') return 0;
     if (courses <= 1) return 0;
@@ -271,10 +308,9 @@ export class Sim {
     for (const r of this.world.raiders) {
       if (r.state === 'repelled') {
         r.ttl -= dt;
-        // Retreat back out the way it came.
-        const wall = this.world.wallsById[r.wallId];
-        r.x += wall.nx * r.speed * dt;
-        r.y += wall.ny * r.speed * dt;
+        // Retreat straight back out along the bearing it arrived on.
+        r.x += Math.cos(r.angle) * r.speed * dt;
+        r.y += Math.sin(r.angle) * r.speed * dt;
         if (r.ttl > 0) survivors.push(r);
         continue;
       }
@@ -380,11 +416,14 @@ export class Sim {
       column: r.column,
     });
 
-    const keepBrick = this.nearestKeepBrick(r.x, r.y);
-    if (keepBrick) {
-      r.tx = keepBrick.x;
-      r.ty = keepBrick.y;
+    // Same heading, straight on. The keep ring is crossed wherever this bearing
+    // happens to cross it — nothing is ever re-aimed.
+    const keep = this.world.wallsById['K'];
+    if (keep.grid[0].length > 0) {
+      const keepBrick = this.brickAt(keep, 0, r.angle);
       r.column = keepBrick.column;
+      r.tx = this.world.king.x + Math.cos(r.angle) * this.world.keepRadius;
+      r.ty = this.world.king.y + Math.sin(r.angle) * this.world.keepRadius;
     } else {
       r.phase = 'king';
       r.tx = this.world.king.x;
@@ -426,21 +465,6 @@ export class Sim {
 
   private bandFor(course: number, courses: number): CourseBand {
     return courseBand(course, courses);
-  }
-
-  private nearestKeepBrick(x: number, y: number): Brick | null {
-    const keep = this.world.wallsById['K'];
-    let best: Brick | null = null;
-    let bestD = Infinity;
-    for (const id of keep.grid[0]) {
-      const b = this.world.bricks[id];
-      const d = (b.x - x) ** 2 + (b.y - y) ** 2;
-      if (d < bestD) {
-        bestD = d;
-        best = b;
-      }
-    }
-    return best;
   }
 
   // --- Masons -------------------------------------------------------------

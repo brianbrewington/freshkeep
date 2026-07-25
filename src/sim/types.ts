@@ -22,6 +22,17 @@ export interface Brick {
   keep: boolean;
   x: number;
   y: number;
+  /** Centre angle, radians. The board is polar: everything is an arc. */
+  angle: number;
+  /**
+   * Angular width, radians. THIS IS THE BRICK'S SHARE OF TRAFFIC. Raiders come
+   * from random directions aimed at the king, so whatever brick spans an angle
+   * intercepts the raiders arriving on it. Size, throughput and demand are the
+   * same fact seen three ways.
+   */
+  angSpan: number;
+  /** Distance from the king. */
+  radius: number;
   size: BrickSize;
   /** Query throughput weight: S=1, M=3, L=9. This is the NOMINAL, visible signal. */
   throughput: number;
@@ -42,6 +53,20 @@ export interface Brick {
   claimedBy: number | null;
 }
 
+/**
+ * A lobe of concentrated demand: real request traffic is not spread evenly, it
+ * piles onto a few things. Centres are drawn once from the seeded world RNG, so
+ * they are hidden from the player but stable for a seed — you learn where they
+ * are by watching raiders arrive, which is the only honest way to learn it.
+ */
+export interface DemandLobe {
+  angle: number;
+  /** Relative share of this wall's arrivals. */
+  weight: number;
+  /** Angular standard deviation. */
+  width: number;
+}
+
 export interface Wall {
   id: string;
   /** Human name for the report card ("east gate"). */
@@ -54,9 +79,11 @@ export interface Wall {
   spares: number[][];
   /** Hub brick ids per course (shared with a neighbouring wall). */
   hubs: number[][];
-  /** Outward unit normal — raiders come from here. */
-  nx: number;
-  ny: number;
+  /** Sector owned by this wall, radians. Walls partition the whole circle. */
+  angleStart: number;
+  angleEnd: number;
+  /** Empty when demand is flat: arrivals are then uniform across the sector. */
+  lobes: DemandLobe[];
 }
 
 export type RaiderState = 'approaching' | 'repelled' | 'breached';
@@ -67,6 +94,8 @@ export type RaiderPhase = 'wall' | 'keep' | 'king';
 export interface Raider {
   id: number;
   wallId: string;
+  /** The bearing it arrived on. A raider holds this heading all the way in. */
+  angle: number;
   /** Targeted column and course. Course choice is rank-weighted (most queries hit the head). */
   column: number;
   course: number;
@@ -139,6 +168,9 @@ export interface World {
   demand: DemandState[];
   width: number;
   height: number;
+  /** Radius of the outermost course, and of the inner keep ring. */
+  ringOuter: number;
+  keepRadius: number;
   nextRaiderId: number;
   /** Seconds until the next scheduled culling, if the level culls. */
   nextCull: number;

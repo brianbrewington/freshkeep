@@ -6,7 +6,7 @@ Walls are query result sets. Bricks are web pages, each decaying at its own rate
 Raiders are queries. You do not click to repair — you write a policy, and masons
 execute it autonomously. Then you watch your policy win, or lose.
 
-**Status: M1 + M2 complete.** The deterministic simulation core, the rulebook
+**Status: M1 + M2 complete, on a radial board.** The deterministic simulation core, the rulebook
 DSL, auction mode, six levels, telemetry and the headless CLI (M1); and the
 canvas renderer, live rulebook editor, controls, report card and thesis button
 (M2). Everything is tested.
@@ -40,6 +40,62 @@ Same policy. Same seed. Same siege, raider for raider. Half the masons.
 Level 3 is deliberately tuned to sit on that knee: 16 holds on every seed
 tested, 8 falls on every seed tested.
 
+## The board is radial
+
+The king sits at the centre, courses are concentric rings, and a wall is an
+angular **sector** of those rings. Raiders arrive on a bearing and walk a
+straight line at the king — they are never re-aimed, and there is a test
+asserting that a raider's distance to the king only ever decreases.
+
+Walls partition the **whole** circle, because a sector that does not is a gap
+raiders stroll through. A one-wall level is therefore one wall encircling the
+kingdom.
+
+The payoff is that **a brick's angular width IS its share of the traffic.**
+Whatever spans a bearing intercepts everything arriving on it, so size,
+throughput and demand stop being three numbers and become one picture. An L brick
+(throughput 9) literally covers nine times the arc of an S brick, and each course
+tiles its sector exactly — both asserted in `test/basics.test.ts`.
+
+## Is demand flat or peaky?
+
+Both, per level, via `demandPeakiness`. At 0 arrivals spread evenly around a
+sector. Above 0 they concentrate into `demandLobes` bearings with Zipf weights
+`1/(i+1)^peakiness`, which is what request traffic actually looks like. Lobe
+centres are drawn from the seeded world RNG: hidden from the player, stable for a
+seed, and **findable by watching** — turn on the `demand` overlay and a flat
+kingdom shows a smooth ring while a peaky one shows lumps.
+
+The teaching levels ship flat, because a level whose job is to isolate one
+variable must not have a second one moving. The Bubble Trap ships peaky with
+`lobeAnchor: 'small'`, so you can watch the traffic pour onto narrow bricks while
+the wide impressive ones catch almost nothing.
+
+This replaced an earlier `demandExponent` knob (traffic ∝ throughput^k), which
+was rejected because a heavier tail on *size* makes size-greed correct and turns
+BIGGEST FIRST — the bubble-game fallacy — into the strongest policy in the game.
+
+## The basics — six one-mason kingdoms
+
+Levels small enough to read at a glance. One mason, one ring, one idea; no hubs,
+no zones, no keep ring, so a breach hits the king immediately and cause and
+effect are one step apart. Each names the preset that plainly fails it, and the
+level **opens on that preset** — watch the wrong policy lose, load the worked
+solution, watch the identical siege hold.
+
+| level | lesson |
+|---|---|
+| The Keystone | one brick spans 92% of the circle; it is worth more than the other five together |
+| Fair Weather | weathered damage is cosmetic — eight ugly bricks let nobody through, one cracked brick loses the kingdom |
+| Fixed Price | every repair costs the same slot, so topping up a 0.9 brick buys nothing |
+| The Twitchy One | drain rate says how *often*, never how *much* |
+| Two Gates | one mason cannot be in two places; the same rulebook holds it with two |
+| The Spare | a raider only passes when its *whole* target set has crumbled |
+
+`test/basics.test.ts` asserts the pairing for each: the solution holds on ≥4 of 5
+seeds, the named wrong preset holds on ≤1. That is what "the lesson is plain"
+means, stated as an assertion rather than a hope.
+
 ## The visual language
 
 Everything is designed to be read at a glance, because the player is watching a
@@ -57,6 +113,7 @@ policy rather than driving it.
 | **raider** | red arrow; a puff ring and retreat when repelled, a treasure bag when it breaches |
 | **drain rate** | 1–3 pips on every brick — slate / amber / red for slow / medium / fast, bucketed by the same `slow`/`medium`/`fast` thresholds the DSL exposes, so what you can see is exactly what you can write a rule about |
 | **breach** | expanding red pulse at the segment that gave way |
+| **demand** | optional halo outside the wall: smooth ring = flat, lumps = peaky |
 
 Three separate signals, three separate shapes, so none can be mistaken for
 another at a glance: cracks are jagged strokes, weathering is diagonal hatching,
@@ -107,8 +164,10 @@ src/sim/
     presets.ts    the five pathology presets
     solutions.ts  worked solutions, one per level that needs a written policy
     auction.ts    Mode 3 bid weights
+  basics.ts       the six one-mason teaching levels
 src/cli/run.ts    headless runner
-test/             determinism, DSL, acceptance
+tools/balance.ts  policy x level x crew x seed sweeps, and knee-finding
+test/             determinism, DSL, acceptance, basics
 ```
 
 ## Acceptance criteria — all asserted in `test/acceptance.test.ts`

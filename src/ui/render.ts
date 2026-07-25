@@ -1,11 +1,15 @@
 import type { Brick, Mason, Raider, World } from '../sim/types.js';
-import { SIZE_FOOTPRINT, damageState } from '../sim/config.js';
+import { damageState } from '../sim/config.js';
+import { COURSE_GAP } from '../sim/level.js';
 import type { Sim } from '../sim/sim.js';
 
 /**
- * Flat 2D top-down renderer. Readable at a glance is the whole requirement:
- * integrity is a fill level, weathered is a discolouration that is clearly NOT
- * a crack, hubs look like cornerstones, and every raider resolution is visible.
+ * Polar renderer. The board is concentric rings of arcs around the king, and a
+ * brick's angular width is its share of traffic — so the picture and the
+ * mechanic are the same thing. Readable at a glance is the whole requirement:
+ * integrity is a fill level, weathered is a discolouration clearly unlike a
+ * crack, hubs look like cornerstones, drain rate is pips, and every raider
+ * resolution is visible.
  */
 
 const PALETTE = {
@@ -24,11 +28,10 @@ const PALETTE = {
   masonHat: '#e8a33d',
   raider: '#c2504a',
   raiderBreach: '#ff6b5e',
-  puff: '#e9dfc8',
   king: '#f2d98b',
-  text: '#d8ccb4',
   dim: '#7a6f5c',
   drain: '#e06a4a',
+  demand: '#c2504a',
 };
 
 /** Deterministic per-brick pseudo-randomness so crack sprites never jitter. */
@@ -40,20 +43,22 @@ function noise(id: number, salt: number): number {
 }
 
 export interface RenderOptions {
-  /** Auction mode: tint bricks by their current bid. */
   showBids?: boolean;
-  /** Draw a line from each mason to its current task. */
   showTasks?: boolean;
+  /** Halo outside the wall showing where raiders actually arrive from. */
+  showDemand?: boolean;
 }
+
+/** Radial depth of a brick, world units. */
+const BRICK_DEPTH = COURSE_GAP * 0.66;
+/** Mortar: a hairline of empty arc between neighbours so bricks read separately. */
+const MORTAR = 0.006;
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D;
   private scale = 1;
   private ox = 0;
   private oy = 0;
-  /** Brick footprint orientation: true when the brick's wall runs vertically. */
-  private vertical = new Map<number, boolean>();
-  private angle = new Map<number, number>();
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext('2d');
@@ -69,44 +74,12 @@ export class Renderer {
     this.canvas.height = Math.floor(rect.height * dpr);
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    // Frame the fortress, not the empty map. Levels with one wall would otherwise
-    // sit in a third of the canvas surrounded by nothing.
-    let minX = world.king.x;
-    let maxX = world.king.x;
-    let minY = world.king.y;
-    let maxY = world.king.y;
-    for (const b of world.bricks) {
-      minX = Math.min(minX, b.x);
-      maxX = Math.max(maxX, b.x);
-      minY = Math.min(minY, b.y);
-      maxY = Math.max(maxY, b.y);
-    }
-    const margin = 70;
-    minX -= margin;
-    maxX += margin;
-    minY -= margin;
-    maxY += margin;
-
-    const pad = 14;
-    this.scale = Math.min(
-      (rect.width - pad * 2) / (maxX - minX),
-      (rect.height - pad * 2) / (maxY - minY),
-    );
-    this.ox = (rect.width - (maxX - minX) * this.scale) / 2 - minX * this.scale;
-    this.oy = (rect.height - (maxY - minY) * this.scale) / 2 - minY * this.scale;
-
-    this.vertical.clear();
-    this.angle.clear();
-    for (const b of world.bricks) {
-      const wall = world.wallsById[b.wallIds[0]];
-      if (b.keep) {
-        this.angle.set(b.id, Math.atan2(b.y - world.king.y, b.x - world.king.x));
-      } else if (b.hub) {
-        this.angle.set(b.id, Math.PI / 4);
-      } else {
-        this.vertical.set(b.id, wall.nx !== 0);
-      }
-    }
+    // Frame the fortress plus the approach lane, not the whole empty map.
+    const reach = world.ringOuter + 90;
+    const pad = 12;
+    this.scale = Math.min((rect.width - pad * 2) / (reach * 2), (rect.height - pad * 2) / (reach * 2));
+    this.ox = rect.width / 2 - world.king.x * this.scale;
+    this.oy = rect.height / 2 - world.king.y * this.scale;
   }
 
   private sx(x: number): number {
@@ -124,11 +97,15 @@ export class Renderer {
     ctx.fillStyle = PALETTE.ground;
     ctx.fillRect(0, 0, rect.width, rect.height);
     this.drawGround(w);
+    if (opts.showDemand) this.drawDemand(sim);
 
     let maxBid = 1;
     if (opts.showBids && sim.policy.bid) {
       for (const b of w.bricks) {
-        maxBid = Math.max(maxBid, sim.policy.bid({ brick: b, mason: w.masons[0], distance: 0, band: sim.bandOf(b), cfg: sim.cfg }));
+        maxBid = Math.max(
+          maxBid,
+          sim.policy.bid({ brick: b, mason: w.masons[0], distance: 0, band: sim.bandOf(b), cfg: sim.cfg }),
+        );
       }
     }
 
@@ -139,10 +116,209 @@ export class Renderer {
     for (const m of w.masons) this.drawMason(sim, m, opts);
   }
 
+  /** Concentric guide rings — the board is polar, so the grid should be too. */
+  private drawGround(w: World): void {
+    const { ctx } = this;
+    const kx = this.sx(w.king.x);
+    const ky = this.sy(w.king.y);
+    ctx.strokeStyle = PALETTE.groundGrid;
+    ctx.lineWidth = 1;
+    for (let r = 60; r <= w.ringOuter + 90; r += 60) {
+      ctx.beginPath();
+      ctx.arc(kx, ky, r * this.scale, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+  }
+
   /**
-   * A breach is the moment the game is about; it must not slip past unseen.
-   * Recent breaches pulse a red ring at the wall segment that gave way.
+   * Where the raiders actually come from. This is the answer to "is demand flat
+   * or peaky?" — a smooth ring means flat, lumps mean the traffic is piling onto
+   * a few bearings. The player is never told the distribution; they can see it.
    */
+  private drawDemand(sim: Sim): void {
+    const { ctx } = this;
+    const w = sim.world;
+    const kx = this.sx(w.king.x);
+    const ky = this.sy(w.king.y);
+    const base = (w.ringOuter + 26) * this.scale;
+    const amp = 34 * this.scale;
+
+    const shareOf = new Map<string, number>();
+    let totalShare = 0;
+    for (const d of w.demand) {
+      shareOf.set(d.wallId, d.baseRate);
+      totalShare += d.baseRate;
+    }
+
+    const steps = 240;
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      let density = 0;
+      for (const wall of w.walls) {
+        if (wall.id === 'K') continue;
+        const share = (shareOf.get(wall.id) ?? 0) / (totalShare || 1);
+        const width = wall.angleEnd - wall.angleStart;
+        const sector = ((width % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) || Math.PI * 2;
+        if (wall.lobes.length === 0) {
+          const rel = ((a - wall.angleStart) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+          if (rel < sector) density += share / sector;
+        } else {
+          const totalW = wall.lobes.reduce((s, l) => s + l.weight, 0);
+          for (const l of wall.lobes) {
+            const d = Math.atan2(Math.sin(a - l.angle), Math.cos(a - l.angle));
+            density += share * (l.weight / totalW) * Math.exp(-(d * d) / (2 * l.width * l.width)) / (l.width * 2.5);
+          }
+        }
+      }
+      const r = base + Math.min(amp, density * amp * 2.2);
+      const x = kx + Math.cos(a) * r;
+      const y = ky + Math.sin(a) * r;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.strokeStyle = 'rgba(194,80,74,0.55)';
+    ctx.lineWidth = Math.max(1, 1.4 * this.scale);
+    ctx.stroke();
+    // Fill only the band between the baseline and the density curve, not the
+    // whole disc — the halo is an annulus, drawn with an even-odd inner circle.
+    ctx.arc(kx, ky, base, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(194,80,74,0.16)';
+    ctx.fill('evenodd');
+  }
+
+  /** Trace an annulus sector: the one shape every brick on this board is. */
+  private arcPath(kx: number, ky: number, rIn: number, rOut: number, a0: number, a1: number): void {
+    const { ctx } = this;
+    ctx.beginPath();
+    ctx.arc(kx, ky, rOut, a0, a1);
+    ctx.arc(kx, ky, rIn, a1, a0, true);
+    ctx.closePath();
+  }
+
+  private drawBrick(sim: Sim, b: Brick, opts: RenderOptions, maxBid: number): void {
+    const { ctx } = this;
+    const w = sim.world;
+    const kx = this.sx(w.king.x);
+    const ky = this.sy(w.king.y);
+    const state = damageState(b.integrity);
+
+    const depth = (b.hub ? BRICK_DEPTH * 1.25 : BRICK_DEPTH) * this.scale;
+    const rMid = b.radius * this.scale;
+    const rIn = rMid - depth / 2;
+    const rOut = rMid + depth / 2;
+    const half = Math.max(b.angSpan / 2 - MORTAR, b.angSpan * 0.2);
+    const a0 = b.angle - half;
+    const a1 = b.angle + half;
+
+    // Socket: what is missing must be as legible as what is there.
+    this.arcPath(kx, ky, rIn, rOut, a0, a1);
+    ctx.fillStyle = PALETTE.empty;
+    ctx.fill();
+
+    if (state !== 'rubble') {
+      ctx.fillStyle =
+        state === 'weathered' ? PALETTE.weathered : state === 'cracked' ? PALETTE.cracked : PALETTE.stone;
+      if (b.hub && state === 'intact') ctx.fillStyle = PALETTE.hub;
+      if (b.keep && state === 'intact') ctx.fillStyle = PALETTE.keep;
+      // Integrity fills outward from the kingward edge: a half-gone brick is
+      // visibly half a wall, with the gap on the side the raiders come from.
+      this.arcPath(kx, ky, rIn, rIn + (rOut - rIn) * b.integrity, a0, a1);
+      ctx.fill();
+    } else {
+      ctx.fillStyle = PALETTE.rubble;
+      for (let i = 0; i < 5; i++) {
+        const a = a0 + (a1 - a0) * noise(b.id, i);
+        const r = rIn + (rOut - rIn) * noise(b.id, i + 40);
+        const s = Math.max(1.6, 2.8 * this.scale);
+        ctx.fillRect(kx + Math.cos(a) * r - s / 2, ky + Math.sin(a) * r - s / 2, s, s);
+      }
+    }
+
+    ctx.save();
+    this.arcPath(kx, ky, rIn, rOut, a0, a1);
+    ctx.clip();
+
+    // Cracks: jagged radial fractures. Structural damage only.
+    if (state === 'cracked') {
+      ctx.strokeStyle = 'rgba(20,12,8,0.8)';
+      ctx.lineWidth = Math.max(0.9, 1.2 * this.scale);
+      const n = 2 + Math.floor((1 - b.integrity / 0.33) * 2);
+      ctx.beginPath();
+      for (let i = 0; i < n; i++) {
+        const a = a0 + (a1 - a0) * (0.2 + 0.6 * noise(b.id, i));
+        const jitter = (noise(b.id, i + 11) - 0.5) * (a1 - a0) * 0.5;
+        ctx.moveTo(kx + Math.cos(a) * rIn, ky + Math.sin(a) * rIn);
+        ctx.lineTo(kx + Math.cos(a + jitter) * rMid, ky + Math.sin(a + jitter) * rMid);
+        ctx.lineTo(kx + Math.cos(a - jitter) * rOut, ky + Math.sin(a - jitter) * rOut);
+      }
+      ctx.stroke();
+    }
+
+    // Weathered: tangential hatching. Deliberately unlike a crack (radial, jagged)
+    // and unlike the drain pips (dots), so the three signals never blur together.
+    if (state === 'weathered') {
+      ctx.strokeStyle = 'rgba(52,74,48,0.6)';
+      ctx.lineWidth = Math.max(0.7, 1 * this.scale);
+      const rings = 3;
+      ctx.beginPath();
+      for (let i = 1; i <= rings; i++) {
+        const r = rIn + ((rOut - rIn) * i) / (rings + 1);
+        ctx.arc(kx, ky, r, a0, a1);
+        ctx.moveTo(kx + Math.cos(a0) * rIn, ky + Math.sin(a0) * rIn);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.strokeStyle = b.hub ? PALETTE.hubEdge : PALETTE.stoneEdge;
+    ctx.lineWidth = b.hub ? Math.max(1.3, 1.9 * this.scale) : Math.max(0.6, 0.9 * this.scale);
+    this.arcPath(kx, ky, rIn, rOut, a0, a1);
+    ctx.stroke();
+
+    // Cornerstone mark, so a hub is identifiable without a legend.
+    if (b.hub) {
+      ctx.strokeStyle = PALETTE.hubEdge;
+      ctx.lineWidth = Math.max(1, 1.3 * this.scale);
+      ctx.beginPath();
+      ctx.moveTo(kx + Math.cos(a0) * rMid, ky + Math.sin(a0) * rMid);
+      ctx.lineTo(kx + Math.cos(b.angle) * rOut, ky + Math.sin(b.angle) * rOut);
+      ctx.lineTo(kx + Math.cos(a1) * rMid, ky + Math.sin(a1) * rMid);
+      ctx.lineTo(kx + Math.cos(b.angle) * rIn, ky + Math.sin(b.angle) * rIn);
+      ctx.closePath();
+      ctx.stroke();
+    }
+
+    // Drain rate: pips just outside the brick, bucketed by the same slow/medium/
+    // fast thresholds the DSL exposes — what you can see is what you can rule on.
+    const pips =
+      b.decayRate >= sim.cfg.decayNamed.fast ? 3 : b.decayRate >= sim.cfg.decayNamed.medium ? 2 : 1;
+    const pipR = Math.max(1, 1.6 * this.scale);
+    ctx.fillStyle = pips === 3 ? PALETTE.drain : pips === 2 ? '#d9a24a' : '#6f7f8a';
+    for (let i = 0; i < pips; i++) {
+      const spread = Math.min((a1 - a0) * 0.3, 0.05);
+      const a = b.angle + (i - (pips - 1) / 2) * spread;
+      const r = rOut - pipR * 2.1;
+      ctx.beginPath();
+      ctx.arc(kx + Math.cos(a) * r, ky + Math.sin(a) * r, pipR, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    if (opts.showBids && sim.policy.bid) {
+      const bid = sim.policy.bid({
+        brick: b,
+        mason: w.masons[0],
+        distance: 0,
+        band: sim.bandOf(b),
+        cfg: sim.cfg,
+      });
+      this.arcPath(kx, ky, rIn, rOut, a0, a1);
+      ctx.fillStyle = `rgba(255,150,40,${Math.min(0.62, (bid / maxBid) * 0.62)})`;
+      ctx.fill();
+    }
+  }
+
   private drawBreachPulses(sim: Sim): void {
     const { ctx } = this;
     const window = 0.9;
@@ -163,173 +339,6 @@ export class Renderer {
     }
   }
 
-  private drawGround(w: World): void {
-    const { ctx } = this;
-    ctx.strokeStyle = PALETTE.groundGrid;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    const step = 100;
-    for (let x = 0; x <= w.width; x += step) {
-      ctx.moveTo(this.sx(x), this.sy(0));
-      ctx.lineTo(this.sx(x), this.sy(w.height));
-    }
-    for (let y = 0; y <= w.height; y += step) {
-      ctx.moveTo(this.sx(0), this.sy(y));
-      ctx.lineTo(this.sx(w.width), this.sy(y));
-    }
-    ctx.stroke();
-  }
-
-  private brickBox(b: Brick): { w: number; h: number } {
-    const f = SIZE_FOOTPRINT[b.size];
-    if (b.hub) return { w: 30 * this.scale, h: 30 * this.scale };
-    const long = 40 * f * this.scale;
-    const short = 17 * f * this.scale;
-    // Keep bricks are rotated to face outward, so their radial depth is `w`
-    // and their tangential length is `h`. Equal values would read as diamonds.
-    if (b.keep) return { w: short * 0.9, h: long * 0.8 };
-    return this.vertical.get(b.id) ? { w: short, h: long } : { w: long, h: short };
-  }
-
-  private drawBrick(sim: Sim, b: Brick, opts: RenderOptions, maxBid: number): void {
-    const { ctx } = this;
-    const x = this.sx(b.x);
-    const y = this.sy(b.y);
-    const box = this.brickBox(b);
-    const state = damageState(b.integrity);
-
-    ctx.save();
-    ctx.translate(x, y);
-    const ang = this.angle.get(b.id);
-    if (ang !== undefined) ctx.rotate(b.keep ? ang : ang);
-
-    const hw = box.w / 2;
-    const hh = box.h / 2;
-
-    // Socket: what is missing is as legible as what is there.
-    ctx.fillStyle = PALETTE.empty;
-    roundRect(ctx, -hw, -hh, box.w, box.h, 2);
-    ctx.fill();
-
-    if (state !== 'rubble') {
-      // Integrity as a fill level, growing from the inner (kingward) edge.
-      const fillH = box.h * b.integrity;
-      const fillW = box.w * b.integrity;
-      const useVertical = box.h >= box.w;
-      ctx.fillStyle =
-        state === 'weathered' ? PALETTE.weathered : state === 'cracked' ? PALETTE.cracked : PALETTE.stone;
-      if (b.hub) {
-        ctx.fillStyle = state === 'intact' ? PALETTE.hub : ctx.fillStyle;
-      }
-      if (b.keep && state === 'intact') ctx.fillStyle = PALETTE.keep;
-
-      ctx.save();
-      ctx.beginPath();
-      if (useVertical) ctx.rect(-hw, hh - fillH, box.w, fillH);
-      else ctx.rect(-hw, -hh, fillW, box.h);
-      ctx.clip();
-      roundRect(ctx, -hw, -hh, box.w, box.h, 2);
-      ctx.fill();
-      ctx.restore();
-    } else {
-      // Rubble: a scatter of fragments where a brick used to be. It has to read as
-      // DESTROYED, not as absent — an empty-looking socket and a ruined one mean
-      // very different things to a player scanning the wall.
-      ctx.fillStyle = PALETTE.rubble;
-      for (let i = 0; i < 5; i++) {
-        const rx = (noise(b.id, i) - 0.5) * box.w * 0.78;
-        const ry = (noise(b.id, i + 40) - 0.5) * box.h * 0.78;
-        const s = Math.max(1.8, 3.2 * this.scale) * (0.6 + noise(b.id, i + 90) * 0.7);
-        ctx.fillRect(rx, ry, s, s);
-      }
-    }
-
-    // Cracks — drawn ONLY for structural damage, never for weathered.
-    if (state === 'cracked') {
-      ctx.strokeStyle = 'rgba(20,12,8,0.75)';
-      ctx.lineWidth = Math.max(0.8, 1.1 * this.scale);
-      const n = 2 + Math.floor((1 - b.integrity / 0.33) * 2);
-      ctx.beginPath();
-      for (let i = 0; i < n; i++) {
-        const x0 = (noise(b.id, i) - 0.5) * box.w;
-        ctx.moveTo(x0, -hh);
-        ctx.lineTo(x0 + (noise(b.id, i + 9) - 0.5) * box.w * 0.5, 0);
-        ctx.lineTo(x0 + (noise(b.id, i + 17) - 0.5) * box.w * 0.7, hh);
-      }
-      ctx.stroke();
-    }
-
-    // Weathered = discolouration plus soft diagonal hatching. Deliberately unlike
-    // a crack (jagged strokes) AND unlike the drain pips (dots), so the three
-    // signals can never be mistaken for one another at a glance.
-    if (state === 'weathered') {
-      ctx.save();
-      ctx.beginPath();
-      ctx.rect(-hw, -hh, box.w, box.h);
-      ctx.clip();
-      ctx.strokeStyle = 'rgba(52,74,48,0.55)';
-      ctx.lineWidth = Math.max(0.7, 1.1 * this.scale);
-      const step = Math.max(3, 5 * this.scale);
-      ctx.beginPath();
-      for (let d = -box.h; d < box.w + box.h; d += step) {
-        ctx.moveTo(-hw + d, -hh);
-        ctx.lineTo(-hw + d - box.h, hh);
-      }
-      ctx.stroke();
-      ctx.restore();
-    }
-
-    // Drain rate: how fast this brick sheds integrity, as pips along its edge.
-    // Bucketed by the SAME slow/medium/fast thresholds the DSL exposes, so what
-    // the player can see is exactly what they can write a rule about.
-    const pips =
-      b.decayRate >= sim.cfg.decayNamed.fast ? 3 : b.decayRate >= sim.cfg.decayNamed.medium ? 2 : 1;
-    const pipR = Math.max(0.9, 1.5 * this.scale);
-    const along = box.w >= box.h;
-    ctx.fillStyle = pips === 3 ? PALETTE.drain : pips === 2 ? '#d9a24a' : '#6f7f8a';
-    for (let i = 0; i < pips; i++) {
-      const off = (i - (pips - 1) / 2) * pipR * 2.6;
-      const px = along ? off : hw - pipR * 1.8;
-      const py = along ? -hh + pipR * 1.8 : off;
-      ctx.beginPath();
-      ctx.arc(px, py, pipR, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.strokeStyle = b.hub ? PALETTE.hubEdge : PALETTE.stoneEdge;
-    ctx.lineWidth = b.hub ? Math.max(1.2, 1.8 * this.scale) : Math.max(0.6, 0.9 * this.scale);
-    roundRect(ctx, -hw, -hh, box.w, box.h, 2);
-    ctx.stroke();
-
-    // Cornerstone mark: hubs must be identifiable without reading a legend.
-    if (b.hub) {
-      ctx.strokeStyle = PALETTE.hubEdge;
-      ctx.lineWidth = Math.max(1, 1.4 * this.scale);
-      ctx.beginPath();
-      ctx.moveTo(-hw * 0.55, 0);
-      ctx.lineTo(0, -hh * 0.55);
-      ctx.lineTo(hw * 0.55, 0);
-      ctx.lineTo(0, hh * 0.55);
-      ctx.closePath();
-      ctx.stroke();
-    }
-
-    if (opts.showBids && sim.policy.bid) {
-      const bid = sim.policy.bid({
-        brick: b,
-        mason: sim.world.masons[0],
-        distance: 0,
-        band: sim.bandOf(b),
-        cfg: sim.cfg,
-      });
-      ctx.fillStyle = `rgba(255,150,40,${Math.min(0.62, (bid / maxBid) * 0.62)})`;
-      roundRect(ctx, -hw, -hh, box.w, box.h, 2);
-      ctx.fill();
-    }
-
-    ctx.restore();
-  }
-
   private drawKing(sim: Sim): void {
     const { ctx } = this;
     const k = sim.world.king;
@@ -342,7 +351,6 @@ export class Renderer {
     ctx.arc(x, y, r * 1.5, 0, Math.PI * 2);
     ctx.fill();
 
-    // HP ring.
     const frac = Math.max(0, k.hp / k.maxHp);
     ctx.strokeStyle = frac > 0.5 ? '#7fbf7f' : frac > 0.2 ? '#d9b04a' : '#d05a4a';
     ctx.lineWidth = Math.max(2.5, 4 * this.scale);
@@ -350,7 +358,6 @@ export class Renderer {
     ctx.arc(x, y, r * 1.3, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac);
     ctx.stroke();
 
-    // A small crown.
     ctx.fillStyle = PALETTE.king;
     ctx.beginPath();
     ctx.moveTo(x - r * 0.7, y + r * 0.5);
@@ -371,7 +378,6 @@ export class Renderer {
     const s = Math.max(3, 6 * this.scale);
 
     if (r.state === 'repelled') {
-      // The thwarted puff: expands and fades as it retreats.
       const age = 1 - r.ttl / sim.cfg.repelledTtl;
       ctx.strokeStyle = `rgba(233,223,200,${(1 - age) * 0.8})`;
       ctx.lineWidth = Math.max(1, 1.6 * this.scale);
@@ -387,9 +393,8 @@ export class Renderer {
 
     const breached = r.state === 'breached';
     ctx.fillStyle = breached ? PALETTE.raiderBreach : PALETTE.raider;
-    const dx = r.tx - r.x;
-    const dy = r.ty - r.y;
-    const a = Math.atan2(dy, dx);
+    // Every raider points at the king, always.
+    const a = Math.atan2(this.sy(sim.world.king.y) - y, this.sx(sim.world.king.x) - x);
     ctx.save();
     ctx.translate(x, y);
     ctx.rotate(a);
@@ -400,7 +405,6 @@ export class Renderer {
     ctx.closePath();
     ctx.fill();
     if (breached) {
-      // Treasure bag — a breach is a raider leaving with something.
       ctx.fillStyle = PALETTE.king;
       ctx.beginPath();
       ctx.arc(-s * 1.2, 0, s * 0.55, 0, Math.PI * 2);
@@ -426,7 +430,6 @@ export class Renderer {
       ctx.stroke();
     }
 
-    // Slump when idle — the zone-mode pathology has to be visible, not inferred.
     const idle = m.state === 'idle';
     const cy = y + (idle ? s * 0.3 : 0);
 
@@ -438,7 +441,6 @@ export class Renderer {
     ctx.fill();
     ctx.stroke();
 
-    // Tiny hard hat: clearly smaller than the head, so a mason is never just a dot.
     const hatY = cy - s * 0.42;
     ctx.fillStyle = idle ? '#8a6a33' : PALETTE.masonHat;
     ctx.beginPath();
@@ -463,15 +465,4 @@ export class Renderer {
       ctx.fillText('!', x, y - s * 1.6);
     }
   }
-}
-
-function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number): void {
-  const rr = Math.min(r, w / 2, h / 2);
-  ctx.beginPath();
-  ctx.moveTo(x + rr, y);
-  ctx.arcTo(x + w, y, x + w, y + h, rr);
-  ctx.arcTo(x + w, y + h, x, y + h, rr);
-  ctx.arcTo(x, y + h, x, y, rr);
-  ctx.arcTo(x, y, x + w, y, rr);
-  ctx.closePath();
 }
