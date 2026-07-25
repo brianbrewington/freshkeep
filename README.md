@@ -218,6 +218,50 @@ Raiders resolve at the **face** of the wall and never come to rest inside the
 masonry. Which course a raider queries still decides what defends it (its target
 set); it simply does not walk in to find out.
 
+## What the cross-model review changed
+
+The sim and its tests were reviewed by **Grok 4.5** and **Composer 2.5** via
+Cursor — deliberately non-Anthropic, so the reviewers did not share the author's
+blind spots. Both independently reached the same verdict: *the tests measured the
+balance spreadsheet, not the simulation.*
+
+Their headline claim — "break `brickAt` and the suite still passes" — turned out
+to be **false**; mutation-testing it fails 5 tests, and falsifying "arc = traffic"
+fails 4 more, including the two teaching levels whose lesson depends on it. But
+the deeper criticism was right and is now fixed: the geometry was only protected
+*indirectly*, through balance outcomes. Breaking the bearing→brick mapping used to
+fail with *"MIND THE KEYSTONE should hold The Keystone"*, which tells you nothing.
+It now fails with *"column 0 (L) covers 92.0% of the circle but took 100.0% of the
+raiders."*
+
+Bugs the review surfaced, all reproduced before fixing:
+
+- **`traffic` in the DSL meant size, not traffic.** It aliased `throughput`, the
+  size class — precisely the fallacy The Bubble Trap exists to break. It now reads
+  the brick's angular share, with `arc` as a synonym.
+- **`wall > E` silently compiled as `wall = E`.** Walls have no order; the
+  operator was discarded. It is now a parse error that says so.
+- **The middle rank was dead on any two-course level.** `mid` floored onto course
+  0, so the tutorial ran 95/5 instead of the configured 70/25/5. Measured at 96/4
+  before, 75/25 after.
+- **`structural` hardcoded `0.33`** instead of tracking `DAMAGE_THRESHOLDS`.
+- **The hub-repair criterion was judged on a single seed.**
+
+And one the *new* tests found on their first run, which neither reviewer nor the
+author had spotted:
+
+- **`norm()` was not idempotent.** `((a % TAU) + TAU) % TAU` round-trips lossily
+  for a value already in range and can return one ULP low. Sector bounds are
+  stored normalized, so a bearing landing exactly on a seam normalized to just
+  below its own sector's start — belonging to **no wall at all**. Values in range
+  are now returned untouched.
+
+`test/geometry.test.ts` holds the assertions that would have caught these:
+a spawn histogram against `angSpan` over 40 seeds, bearing→brick resolution at
+arc edges, seam ownership, `inSector` boundary and wrap cases, and full
+spawn-*sequence* equality across policies and crew sizes (the demand-isolation
+guarantee was previously checked only as a total arrival count).
+
 ## Decisions the spec left open
 
 Recorded here because they are judgment calls, not derivations.

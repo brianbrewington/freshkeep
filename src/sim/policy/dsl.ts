@@ -1,6 +1,6 @@
 import type { EvalCtx, Ordering, Predicate, Tier, Policy } from './ir.js';
 import { ORDERINGS, ORDERING_NAMES, policyFromTiers } from './ir.js';
-import { damageState } from '../config.js';
+import { DAMAGE_THRESHOLDS, damageState } from '../config.js';
 
 /**
  * Mode 1 — Rulebook: a tiny declarative priority DSL.
@@ -72,7 +72,19 @@ const NUMERIC_FIELDS: Record<string, (c: EvalCtx) => number> = {
   decayrate: (c) => c.brick.decayRate,
   decay: (c) => c.brick.decayRate,
   throughput: (c) => c.brick.throughput,
-  traffic: (c) => c.brick.throughput,
+  /**
+   * `traffic` / `arc` is the brick's ANGULAR WIDTH — its share of the raiders
+   * arriving on this wall. It used to alias `throughput`, i.e. the size class,
+   * which is precisely the fallacy The Bubble Trap exists to break: a sliver of a
+   * brick can be size L and answer almost nothing. Arc is the honest signal and,
+   * unlike a hidden weight, the player can see it.
+   *
+   * It is still only a PROXY for real demand: when a level peaks its arrivals
+   * into lobes, the traffic goes where the lobes are, not where the arc is.
+   * That gap is the lesson, not a bug.
+   */
+  traffic: (c) => c.brick.angSpan,
+  arc: (c) => c.brick.angSpan,
   distance: (c) => c.distance,
   course: (c) => c.brick.course,
   size: (c) => SIZE_ORD[c.brick.size.toLowerCase()],
@@ -89,7 +101,7 @@ const BOOLEAN_FIELDS: Record<string, Predicate> = {
   /** Anything not at full integrity. */
   damaged: (c) => c.brick.integrity < 1,
   /** Structurally passable-ish: cracked or rubble. What actually loses you the game. */
-  structural: (c) => c.brick.integrity < 0.33,
+  structural: (c) => c.brick.integrity < DAMAGE_THRESHOLDS.weathered,
   top: (c) => c.band === 'top',
   mid: (c) => c.band === 'mid',
   deep: (c) => c.band === 'deep',
@@ -198,6 +210,12 @@ class Parser {
       if (!valTok) throw new PolicyParseError(`expected a value after '${nxt.v}'`, this.line);
       if (!(name in NUMERIC_FIELDS)) {
         if (name === 'wall') {
+          if (nxt.v !== '=' && nxt.v !== '==' && nxt.v !== '!=') {
+            throw new PolicyParseError(
+              `walls have no order, so '${nxt.v}' means nothing here — use wall = ${valTok.v} or wall != ${valTok.v}`,
+              this.line,
+            );
+          }
           const wid = valTok.v;
           const eq = (c: EvalCtx) => c.brick.wallIds.includes(wid);
           return nxt.v === '!=' ? (c) => !eq(c) : eq;

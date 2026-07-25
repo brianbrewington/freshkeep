@@ -294,11 +294,19 @@ export class Sim {
     return best;
   }
 
+  /**
+   * Which ring a query of this rank actually lands on.
+   *
+   * `mid` used to floor to 0 whenever a level had two courses, quietly handing
+   * the top ring 95% of arrivals instead of the configured 70% and leaving the
+   * middle rank dead. With only two rings there is nowhere separate for mid to
+   * go, so it shares the inner ring with deep — but it no longer vanishes.
+   */
   private courseForBand(band: CourseBand, courses: number): number {
-    if (band === 'top') return 0;
     if (courses <= 1) return 0;
+    if (band === 'top') return 0;
     if (band === 'deep') return courses - 1;
-    return Math.min(courses - 1, Math.max(0, Math.floor((courses - 1) / 2)));
+    return Math.min(courses - 1, Math.max(1, Math.floor((courses - 1) / 2)));
   }
 
   // --- Raiders ------------------------------------------------------------

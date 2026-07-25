@@ -28,9 +28,23 @@ const SIDE_ANGLE: Record<Side, number> = {
   W: Math.PI,
 };
 
-/** Normalize to [0, TAU). */
+/**
+ * Normalize to [0, TAU), IDEMPOTENTLY.
+ *
+ * The obvious `((a % TAU) + TAU) % TAU` is not idempotent: for a value already in
+ * range, adding TAU and taking the modulus again is a lossy round-trip that can
+ * come back one ULP low. That is not academic — sector bounds are stored
+ * normalized, so `norm(wall.angleStart)` could return a hair BELOW that start,
+ * landing on the exclusive end of the previous sector and belonging to no wall at
+ * all. Values already in range are now returned untouched.
+ */
 export function norm(a: number): number {
-  return ((a % TAU) + TAU) % TAU;
+  if (a >= 0 && a < TAU) return a;
+  let r = a % TAU;
+  if (r < 0) r += TAU;
+  // A tiny negative remainder can round up to exactly TAU when TAU is added.
+  if (r >= TAU) r = 0;
+  return r;
 }
 
 /** Is angle `a` inside the sector [start, end), walking anticlockwise? */

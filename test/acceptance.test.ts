@@ -140,7 +140,11 @@ describe('acceptance — the thesis button (Cornerstones)', () => {
 
 describe('acceptance — hub-repair ratio is the "did you find the shared structure" metric', () => {
   it('is computed and displayed, and winning runs beat losing runs on Cornerstones', () => {
-    const cards = PRESETS.map((p) => ({ preset: p, card: runPreset('cornerstones', p.id) }));
+    // Judged across seeds, not one siege: a single draw was never evidence of a
+    // difference in means, however convenient the number looked.
+    const cards = PRESETS.flatMap((p) =>
+      SEEDS.map((seed) => ({ preset: p, card: runPreset('cornerstones', p.id, undefined, undefined, seed) })),
+    );
     const won = cards.filter((c) => c.card.outcome === 'survived');
     const lost = cards.filter((c) => c.card.outcome === 'fallen');
     expect(won.length).toBeGreaterThan(0);
