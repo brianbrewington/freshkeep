@@ -94,10 +94,14 @@ export const LEVELS: LevelSpec[] = [
     hubsPerCorner: 3,
     keepBricks: 16,
     sizeMix: { S: 2, M: 3, L: 2 },
+    // Cornerstones crumble FAST. Hubs have to be structurally decisive, not merely
+    // present: if they decayed like everything else, a policy could ignore them and
+    // still win, and the level would teach nothing about shared masonry.
+    decayRateFor: (b, rng) => (b.hub ? rng.logNormal(0.05, 0.3) : rng.logNormal(0.033, 0.85)),
     // This level is where the thesis button is argued, so it is tuned to sit
     // exactly on the knee: 16 masons holds on every seed, 8 falls on every seed.
     // One click, same policy, same siege, opposite outcome.
-    config: { decayMedian: 0.025 },
+    config: { decayMedian: 0.033 },
     modes: ['rulebook'],
   },
 
@@ -136,10 +140,10 @@ export const LEVELS: LevelSpec[] = [
     // Lopsided demand AND lopsided work is what makes the seam bite. Demand alone
     // is not enough: decay is what generates mason-work, so if every wall decays
     // at the same rate every crew stays busy and nobody visibly idles.
-    walls: FOUR(12, 2, [5, 1, 5, 1]),
+    walls: FOUR(12, 2, [7, 1, 7, 1]),
     decayRateFor: (b, rng) => {
       const busy = b.wallIds.includes('N') || b.wallIds.includes('S');
-      return rng.logNormal(busy ? 0.024 : 0.005, 0.7);
+      return rng.logNormal(busy ? 0.03 : 0.004, 0.7);
     },
     demandRate: 1.0,
     hubsPerCorner: 0,

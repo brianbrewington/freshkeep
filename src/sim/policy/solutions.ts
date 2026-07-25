@@ -67,12 +67,12 @@ DEFAULT:    none
     name: 'HOLD THE KEEP',
     level: 'culling',
     insight:
-      'When the crew halves and halves again the perimeter stops being defensible. Triage is not failure; it is the optimum under scarcity.',
+      'When the crew halves and halves again the perimeter stops being defensible. Triage is not failure; it is the optimum under scarcity — and since every repair costs the same slot, you spend it late, on what is about to give way.',
     source: `# HOLD THE KEEP
 # Farewell, east wall.
-PRIORITY 1: bricks WHERE keep AND integrity < 0.75 BY nearest
-PRIORITY 2: bricks WHERE hub AND integrity < 0.5 BY nearest
-PRIORITY 3: bricks WHERE course = top AND integrity < 0.4 BY nearest
+PRIORITY 1: bricks WHERE keep AND integrity < 0.35 BY nearest
+PRIORITY 2: bricks WHERE hub AND integrity < 0.35 BY nearest
+PRIORITY 3: bricks WHERE course = top AND integrity < 0.3 BY nearest
 DEFAULT:    none
 `,
   },

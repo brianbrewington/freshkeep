@@ -61,12 +61,14 @@ IGNORE weathered
     id: 'balanced',
     name: 'BALANCED',
     pathology: 'A decent hand-tuned product heuristic. Good — until the masons run out.',
+    // Thresholds are low on purpose: a repair costs a fixed slot of mason time
+    // whatever the brick, so spending one to lift a brick from 0.6 to full buys
+    // far less than spending it on a brick about to give way.
     source: `# BALANCED
 # Cornerstones, then the head of the results, then anything structural.
-PRIORITY 1: bricks WHERE hub AND integrity < 0.6 BY nearest
-PRIORITY 2: bricks WHERE course = top AND integrity < 0.45 BY most valuable
+PRIORITY 1: bricks WHERE hub AND integrity < 0.5 BY nearest
+PRIORITY 2: bricks WHERE course = top AND integrity < 0.35 BY most valuable
 PRIORITY 3: bricks WHERE cracked BY nearest
-PRIORITY 4: bricks WHERE integrity < 0.5 AND decayRate > medium BY nearest
 DEFAULT:    none
 INTERRUPT WHEN integrity < 0.15 AND distance < 150
 `,

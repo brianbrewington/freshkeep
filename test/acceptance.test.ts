@@ -127,9 +127,13 @@ describe('acceptance — the thesis button (Cornerstones)', () => {
   });
 
   it('runs the identical siege at both mason counts, so the comparison is fair', () => {
-    // Demand is drawn from its own RNG stream; only the outcome may differ.
-    const a = runPreset('cornerstones', 'balanced', 16);
-    const b = runPreset('cornerstones', 'balanced', 12);
+    // Demand is drawn from its own RNG stream, so the arrival sequence cannot
+    // depend on the policy or the crew size. Both runs are played to the final
+    // whistle rather than stopping at defeat, otherwise the loser simply sees
+    // fewer raiders because its run ended sooner.
+    const opts = { level: getLevel('cornerstones'), seed: 1, policy: presetPolicy('balanced'), stopOnDefeat: false };
+    const a = runSim({ ...opts, masonCount: 16 }).report;
+    const b = runSim({ ...opts, masonCount: 4 }).report;
     expect(a.arrivals).toBe(b.arrivals);
   });
 });
@@ -161,6 +165,18 @@ describe('acceptance — The Seam: a shared pool strictly dominates forced zones
       expect(zoned.zones).toBe(true);
       expect(pooled.zones).toBe(false);
     }
+  });
+
+  it('and yet the zoned run can post a BETTER average freshness while losing', () => {
+    // Not a bug — the whole point. Zone-locked crews on a quiet wall polish bricks
+    // nobody queries, which lifts the global average while the busy wall comes
+    // down. An average over the wrong denominator flatters a bad allocation.
+    const flattered = SEEDS.filter((seed) => {
+      const zoned = runPreset('seam', 'balanced', undefined, true, seed);
+      const pooled = runPreset('seam', 'balanced', undefined, false, seed);
+      return zoned.freshnessAge < pooled.freshnessAge && zoned.kingHp <= pooled.kingHp;
+    });
+    expect(flattered.length, 'expected at least one seed where the metric lies').toBeGreaterThan(0);
   });
 
   it('shows the pathology in the numbers: zone-locked masons idle while a neighbour burns', () => {

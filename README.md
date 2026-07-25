@@ -49,13 +49,18 @@ policy rather than driving it.
 |---|---|
 | **integrity** | fill level along the brick's long axis |
 | **intact** | warm stone |
-| **weathered** | green discolouration and stipple — deliberately *unlike* a crack, because it is cosmetic and nothing gets through it |
+| **weathered** | green discolouration and diagonal hatching — deliberately *unlike* a crack, because it is cosmetic and nothing gets through it |
 | **cracked** | ochre with dark crack strokes — structural |
 | **rubble** | scattered fragments, distinct from an empty socket |
 | **cornerstone** | gold keystone diamond at the wall junction |
 | **mason** | cream head, orange hard hat, slumps and dims when idle, `!` when interrupted |
 | **raider** | red arrow; a puff ring and retreat when repelled, a treasure bag when it breaches |
+| **drain rate** | 1–3 pips on every brick — slate / amber / red for slow / medium / fast, bucketed by the same `slow`/`medium`/`fast` thresholds the DSL exposes, so what you can see is exactly what you can write a rule about |
 | **breach** | expanding red pulse at the segment that gave way |
+
+Three separate signals, three separate shapes, so none can be mistaken for
+another at a glance: cracks are jagged strokes, weathering is diagonal hatching,
+drain rate is dots.
 
 Crack and rubble sprites are hashed from the brick id, so they never jitter
 between frames.
@@ -122,6 +127,38 @@ test/             determinism, DSL, acceptance
 Performance: 55µs per tick at 192 bricks / 20 masons / 21 raiders — about 0.33%
 of a 60fps frame, so the renderer has the budget it needs.
 
+## Fix-time is constant
+
+A repair takes the same seconds whatever the brick — huge or tiny, twitchy or
+stable, barely weathered or flat rubble. This deliberately reverses the spec's
+"scaled by brick size: big bricks take longer".
+
+It makes the mason's decision a pure question of *value* — which brick is worth a
+slot — instead of a cost/benefit sum in which cheap little repairs are always
+defensible. It is also what makes cosmetic repair genuinely expensive: topping up
+a brick that was never in danger burns exactly as much of your crew as saving one
+that was.
+
+The strategic consequence showed up immediately in the balance data: every
+shipped policy wanted *lower* thresholds afterwards. When a slot costs the same
+either way, you spend it late, on what is about to give way. BALANCED's
+cornerstone rule went from `< 0.6` to `< 0.5`, and the triage solution for The
+Culling went from `< 0.75` to `< 0.35`.
+
+## What counts as a breach
+
+A **breach** is a raider walking through an unmaintained wall segment. It is
+counted the moment the wall fails to answer, regardless of what happens next.
+
+Some breaching raiders are then turned back by the inner keep ring and never
+touch the king, so the report card splits the number: *reached the king* versus
+*stopped by the keep ring*. King HP only moves for the first group, but both are
+breaches — the wall did not answer the query either way.
+
+Raiders resolve at the **face** of the wall and never come to rest inside the
+masonry. Which course a raider queries still decides what defends it (its target
+set); it simply does not walk in to find out.
+
 ## Decisions the spec left open
 
 Recorded here because they are judgment calls, not derivations.
@@ -182,6 +219,17 @@ BIGGEST FIRST — the bubble-game fallacy — turns into the strongest policy un
 scarcity. Size-greed has to fail because it ignores structural risk, travel and
 shared structure, not because size is a lie. The knob survives as a sandbox dial,
 defaulted to the spec's plain 1/3/9.
+
+**The Seam's zoned run can post a BETTER average freshness while losing.** Not a
+bug — the point. Zone-locked crews on a quiet wall polish bricks nobody queries,
+which lifts the global average while the busy wall comes down. There is a test
+asserting the inversion happens on at least one seed: an average taken over the
+wrong denominator flatters a bad allocation.
+
+**Cornerstones crumble faster than ordinary bricks.** Hubs have to be
+structurally decisive, not merely present. With ordinary decay a policy could
+ignore them and still win, the hub-repair ratio stopped separating winners from
+losers, and the level taught nothing about shared masonry.
 
 **The Bubble Trap has one spare brick per course, not two.** Redundancy rewards
 uniform sweeping: when a raider only gets through if the *whole* target set has

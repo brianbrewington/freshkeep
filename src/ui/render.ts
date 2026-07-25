@@ -259,16 +259,24 @@ export class Renderer {
       ctx.stroke();
     }
 
-    // Weathered = discolouration plus a stipple. Deliberately unlike a crack.
+    // Weathered = discolouration plus soft diagonal hatching. Deliberately unlike
+    // a crack (jagged strokes) AND unlike the drain pips (dots), so the three
+    // signals can never be mistaken for one another at a glance.
     if (state === 'weathered') {
-      ctx.fillStyle = 'rgba(60,80,55,0.5)';
-      for (let i = 0; i < 5; i++) {
-        const rx = (noise(b.id, i + 60) - 0.5) * box.w * 0.85;
-        const ry = (noise(b.id, i + 70) - 0.5) * box.h * 0.85;
-        ctx.beginPath();
-        ctx.arc(rx, ry, Math.max(0.7, 1.4 * this.scale), 0, Math.PI * 2);
-        ctx.fill();
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(-hw, -hh, box.w, box.h);
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(52,74,48,0.55)';
+      ctx.lineWidth = Math.max(0.7, 1.1 * this.scale);
+      const step = Math.max(3, 5 * this.scale);
+      ctx.beginPath();
+      for (let d = -box.h; d < box.w + box.h; d += step) {
+        ctx.moveTo(-hw + d, -hh);
+        ctx.lineTo(-hw + d - box.h, hh);
       }
+      ctx.stroke();
+      ctx.restore();
     }
 
     // Drain rate: how fast this brick sheds integrity, as pips along its edge.
