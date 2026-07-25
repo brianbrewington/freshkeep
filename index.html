@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FRESHKEEP</title>
+    <link rel="stylesheet" href="/src/ui/style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>FRESHKEEP</h1>
+      <p class="tagline">You do not repair bricks. You write a policy, and the masons obey it.</p>
+    </header>
+
+    <main>
+      <section class="board">
+        <div class="hud">
+          <div class="hud-left">
+            <span class="level-name" id="level-name">—</span>
+            <span class="clock" id="clock">0.0s</span>
+          </div>
+          <div class="hud-right">
+            <span class="stat"><b id="hp">—</b> king</span>
+            <span class="stat"><b id="breaches">0</b> breaches</span>
+            <span class="stat"><b id="masons">0</b> masons</span>
+          </div>
+        </div>
+        <div class="walls" id="wall-bars"></div>
+        <div class="canvas-wrap">
+          <canvas id="canvas"></canvas>
+        </div>
+        <div class="controls">
+          <button id="play" class="primary">▶ Play</button>
+          <button id="restart">↺ Restart</button>
+          <span class="speeds">
+            <button data-speed="1" class="speed on">1×</button>
+            <button data-speed="2" class="speed">2×</button>
+            <button data-speed="4" class="speed">4×</button>
+            <button data-speed="16" class="speed">16×</button>
+          </span>
+          <label class="check"><input type="checkbox" id="show-tasks" checked /> task lines</label>
+          <label class="check" id="bids-wrap" hidden><input type="checkbox" id="show-bids" /> bid heat</label>
+        </div>
+        <p class="legend">
+          <span class="k intact"></span> intact
+          <span class="k weathered"></span> weathered <i>(cosmetic — nothing gets through)</i>
+          <span class="k cracked"></span> cracked <i>(structural)</i>
+          <span class="k rubble"></span> rubble
+          <span class="k hub"></span> cornerstone
+        </p>
+        <p class="legend">
+          drains: <span class="pip slow"></span> slow
+          <span class="pip med"></span> medium
+          <span class="pip fast"></span> fast
+          <i>— pips on each brick; fixing any brick costs the same time</i>
+        </p>
+      </section>
+
+      <aside class="panel">
+        <div class="row">
+          <label>Level</label>
+          <select id="level"></select>
+        </div>
+        <p class="blurb" id="blurb"></p>
+
+        <div class="row">
+          <label>Mode</label>
+          <select id="mode">
+            <option value="rulebook">1 — Rulebook</option>
+            <option value="zones">2 — Zones</option>
+            <option value="auction">3 — Auction</option>
+          </select>
+        </div>
+
+        <div id="rulebook-ui">
+          <div class="row">
+            <label>Loadout</label>
+            <select id="preset"></select>
+          </div>
+          <p class="pathology" id="pathology"></p>
+          <textarea id="editor" spellcheck="false"></textarea>
+          <p class="err" id="err"></p>
+        </div>
+
+        <div id="auction-ui" hidden>
+          <p class="pathology">Bricks bid; idle masons walk toward the best bid per distance. You program only the weights.</p>
+          <div class="weights" id="weights"></div>
+        </div>
+
+        <div class="row">
+          <label>Masons <span class="hint">the one dial that matters</span></label>
+          <input type="range" id="masons-range" min="1" max="24" />
+          <output id="masons-out"></output>
+        </div>
+        <div class="row">
+          <label>Seed</label>
+          <input type="number" id="seed" value="1" min="0" />
+        </div>
+
+        <button id="apply" class="primary wide">Apply &amp; run</button>
+      </aside>
+    </main>
+
+    <div class="overlay" id="overlay" hidden>
+      <div class="card" id="card"></div>
+    </div>
+
+    <script type="module" src="/src/ui/app.ts"></script>
+  </body>
+</html>

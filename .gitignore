@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.local
+.DS_Store
+.vite/
+
+# Telemetry dumps from the headless runner — research data, but not source.
+*.run.json
+runs/

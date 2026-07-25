@@ -1,0 +1,22 @@
+{
+  "name": "freshkeep",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A game where you program masons to defend a kingdom of freshness.",
+  "scripts": {
+    "sim": "tsx src/cli/run.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0",
+    "vitest": "^1.6.0"
+  }
+}
