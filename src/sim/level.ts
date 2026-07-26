@@ -18,6 +18,9 @@ export type Side = 'N' | 'E' | 'S' | 'W';
 /** Inward spacing between courses. Shared with the raider spawner and the renderer. */
 export const COURSE_GAP = 26;
 
+/** Angular resolution of the observed-arrivals histogram. */
+export const ARRIVAL_BINS = 180;
+
 const TAU = Math.PI * 2;
 
 /** Anchor angles, screen coordinates (y grows downward), N = straight up. */
@@ -426,6 +429,7 @@ export function buildWorld(level: LevelSpec, seed: number, cfg: Config, opts: Bu
     height: cfg.height,
     ringOuter,
     keepRadius,
+    arrivalBins: new Array(ARRIVAL_BINS).fill(0),
     nextRaiderId: 0,
     nextCull: level.culling ? level.culling.everySeconds : Infinity,
   };

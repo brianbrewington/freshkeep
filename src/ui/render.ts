@@ -49,8 +49,14 @@ export interface RenderOptions {
   showDemand?: boolean;
 }
 
-/** Radial depth of a brick, world units. */
-const BRICK_DEPTH = COURSE_GAP * 0.66;
+/**
+ * Radial depth of a brick, world units. Purely a rendering constant — geometry
+ * and balance never read it — so it is free to make bricks readable. A course has
+ * COURSE_GAP to play with; single-ring levels have the whole board and get a much
+ * chunkier brick, because on those the depletion bar IS the level.
+ */
+const BRICK_DEPTH = COURSE_GAP * 0.88;
+const SINGLE_COURSE_DEPTH = COURSE_GAP * 1.7;
 /** Mortar: a hairline of empty arc between neighbours so bricks read separately. */
 const MORTAR = 0.006;
 
@@ -97,7 +103,7 @@ export class Renderer {
     ctx.fillStyle = PALETTE.ground;
     ctx.fillRect(0, 0, rect.width, rect.height);
     this.drawGround(w);
-    if (opts.showDemand) this.drawDemand(sim);
+    if (opts.showDemand) this.drawAttacks(sim);
 
     let maxBid = 1;
     if (opts.showBids && sim.policy.bid) {
@@ -114,6 +120,24 @@ export class Renderer {
     this.drawKing(sim);
     for (const r of w.raiders) this.drawRaider(sim, r);
     for (const m of w.masons) this.drawMason(sim, m, opts);
+    this.drawKingHitFlash(sim, rect);
+  }
+
+  /** The king taking damage is the only thing that actually loses you the game;
+   *  it should register even when you are looking somewhere else on the ring. */
+  private drawKingHitFlash(sim: Sim, rect: DOMRect): void {
+    const window = 0.45;
+    let strongest = 0;
+    for (let i = sim.events.length - 1; i >= 0; i--) {
+      const e = sim.events[i];
+      const age = sim.world.t - e.t;
+      if (age > window) break;
+      if (e.type === 'kingHit') strongest = Math.max(strongest, 1 - age / window);
+    }
+    if (strongest <= 0) return;
+    const { ctx } = this;
+    ctx.fillStyle = `rgba(208,90,74,${(strongest * 0.16).toFixed(3)})`;
+    ctx.fillRect(0, 0, rect.width, rect.height);
   }
 
   /** Concentric guide rings — the board is polar, so the grid should be too. */
@@ -131,60 +155,60 @@ export class Renderer {
   }
 
   /**
-   * Where the raiders actually come from. This is the answer to "is demand flat
-   * or peaky?" — a smooth ring means flat, lumps mean the traffic is piling onto
-   * a few bearings. The player is never told the distribution; they can see it.
+   * Where raiders have ACTUALLY arrived from — the observed record, smeared to
+   * reflect that a single hit tells you roughly, not exactly, where the pressure
+   * is. This deliberately replaced an overlay that drew the true generating
+   * distribution: showing the answer removes the inference, and inferring where
+   * the traffic is from where you have been hit is the skill.
    */
-  private drawDemand(sim: Sim): void {
+  private drawAttacks(sim: Sim): void {
     const { ctx } = this;
     const w = sim.world;
+    const bins = w.arrivalBins;
+    const n = bins.length;
+    const total = bins.reduce((a, b) => a + b, 0);
+    if (total === 0) return;
+
+    // Angular smearing: one arrival is a soft lobe of evidence, not a spike.
+    const sigma = 3.2;
+    const radius = Math.ceil(sigma * 2.5);
+    const kernel: number[] = [];
+    let kSum = 0;
+    for (let d = -radius; d <= radius; d++) {
+      const v = Math.exp(-(d * d) / (2 * sigma * sigma));
+      kernel.push(v);
+      kSum += v;
+    }
+    const smooth = new Array(n).fill(0);
+    for (let i = 0; i < n; i++) {
+      if (bins[i] === 0) continue;
+      for (let d = -radius; d <= radius; d++) {
+        smooth[(i + d + n) % n] += (bins[i] * kernel[d + radius]) / kSum;
+      }
+    }
+    const peak = Math.max(...smooth) || 1;
+
     const kx = this.sx(w.king.x);
     const ky = this.sy(w.king.y);
-    const base = (w.ringOuter + 26) * this.scale;
-    const amp = 34 * this.scale;
+    const base = (w.ringOuter + 30) * this.scale;
+    const amp = 46 * this.scale;
 
-    const shareOf = new Map<string, number>();
-    let totalShare = 0;
-    for (const d of w.demand) {
-      shareOf.set(d.wallId, d.baseRate);
-      totalShare += d.baseRate;
-    }
-
-    const steps = 240;
     ctx.beginPath();
-    for (let i = 0; i <= steps; i++) {
-      const a = (i / steps) * Math.PI * 2;
-      let density = 0;
-      for (const wall of w.walls) {
-        if (wall.id === 'K') continue;
-        const share = (shareOf.get(wall.id) ?? 0) / (totalShare || 1);
-        const width = wall.angleEnd - wall.angleStart;
-        const sector = ((width % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) || Math.PI * 2;
-        if (wall.lobes.length === 0) {
-          const rel = ((a - wall.angleStart) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
-          if (rel < sector) density += share / sector;
-        } else {
-          const totalW = wall.lobes.reduce((s, l) => s + l.weight, 0);
-          for (const l of wall.lobes) {
-            const d = Math.atan2(Math.sin(a - l.angle), Math.cos(a - l.angle));
-            density += share * (l.weight / totalW) * Math.exp(-(d * d) / (2 * l.width * l.width)) / (l.width * 2.5);
-          }
-        }
-      }
-      const r = base + Math.min(amp, density * amp * 2.2);
+    for (let i = 0; i <= n; i++) {
+      const idx = i % n;
+      const a = ((idx + 0.5) / n) * Math.PI * 2;
+      const r = base + (smooth[idx] / peak) * amp;
       const x = kx + Math.cos(a) * r;
       const y = ky + Math.sin(a) * r;
       if (i === 0) ctx.moveTo(x, y);
       else ctx.lineTo(x, y);
     }
     ctx.closePath();
-    ctx.strokeStyle = 'rgba(194,80,74,0.55)';
-    ctx.lineWidth = Math.max(1, 1.4 * this.scale);
+    ctx.strokeStyle = 'rgba(194,80,74,0.5)';
+    ctx.lineWidth = Math.max(1, 1.2 * this.scale);
     ctx.stroke();
-    // Fill only the band between the baseline and the density curve, not the
-    // whole disc — the halo is an annulus, drawn with an even-odd inner circle.
     ctx.arc(kx, ky, base, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(194,80,74,0.16)';
+    ctx.fillStyle = 'rgba(194,80,74,0.17)';
     ctx.fill('evenodd');
   }
 
@@ -204,7 +228,10 @@ export class Renderer {
     const ky = this.sy(w.king.y);
     const state = damageState(b.integrity);
 
-    const depth = (b.hub ? BRICK_DEPTH * 1.25 : BRICK_DEPTH) * this.scale;
+    const wall = w.wallsById[b.wallIds[0]];
+    const roomy = !b.keep && wall && wall.courses === 1;
+    const base = roomy ? SINGLE_COURSE_DEPTH : BRICK_DEPTH;
+    const depth = (b.hub ? base * 1.25 : base) * this.scale;
     const rMid = b.radius * this.scale;
     const rIn = rMid - depth / 2;
     const rOut = rMid + depth / 2;

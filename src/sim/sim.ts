@@ -1,6 +1,6 @@
 import type { Brick, CourseBand, Mason, Raider, Wall, World } from './types.js';
 import { Config, courseBand, damageState, passProbability, DAMAGE_THRESHOLDS } from './config.js';
-import { BuildOptions, LevelSpec, buildWorld, inSector, norm, resolveConfig } from './level.js';
+import { ARRIVAL_BINS, BuildOptions, LevelSpec, buildWorld, inSector, norm, resolveConfig } from './level.js';
 import { Rng } from './rng.js';
 import type { EvalCtx, Policy } from './policy/ir.js';
 import type { SimEvent } from './events.js';
@@ -199,7 +199,7 @@ export class Sim {
         const mean = d.bursting ? this.cfg.burstMeanSeconds : this.cfg.calmMeanSeconds;
         d.nextFlip = this.rngDemand.exponential(1 / mean);
       }
-      const rate = d.baseRate * (d.bursting ? this.cfg.burstMultiplier : 1);
+      const rate = d.baseRate * this.cfg.demandRateScale * (d.bursting ? this.cfg.burstMultiplier : 1);
       d.nextArrival -= dt * rate;
       while (d.nextArrival <= 0) {
         d.nextArrival += this.rngDemand.exponential(1);
@@ -263,6 +263,8 @@ export class Sim {
     };
     this.world.raiders.push(r);
     this.totals.arrivals++;
+    const bin = Math.min(ARRIVAL_BINS - 1, Math.floor((bearing / (Math.PI * 2)) * ARRIVAL_BINS));
+    this.world.arrivalBins[bin]++;
     this.events.push({
       t: round(this.world.t),
       type: 'spawn',

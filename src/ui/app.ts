@@ -40,6 +40,8 @@ const ui = {
   masonsRange: $<HTMLInputElement>('masons-range'),
   masonsOut: $<HTMLOutputElement>('masons-out'),
   seed: $<HTMLInputElement>('seed'),
+  pressureRange: $<HTMLInputElement>('pressure-range'),
+  pressureOut: $<HTMLOutputElement>('pressure-out'),
   apply: $<HTMLButtonElement>('apply'),
   play: $<HTMLButtonElement>('play'),
   restart: $<HTMLButtonElement>('restart'),
@@ -65,6 +67,7 @@ const state = {
   mode: 'rulebook' as Mode,
   seed: 1,
   masons: ALL_LEVELS[0].masons,
+  pressure: 1,
   weights: { ...DEFAULT_WEIGHTS } as AuctionWeights,
   speed: 1,
   playing: false,
@@ -209,6 +212,7 @@ function start(): void {
     policy,
     masonCount: state.masons,
     zones: state.mode === 'zones',
+    configOverrides: { demandRateScale: state.pressure },
   });
   state.reported = false;
   ui.overlay.hidden = true;
@@ -380,6 +384,7 @@ function runThesis(prev: ReportCard): void {
       policy,
       masonCount: fewer,
       zones: state.mode === 'zones',
+      configOverrides: { demandRateScale: state.pressure },
     }).report;
     renderComparison(
       'The one dial that matters',
@@ -406,6 +411,7 @@ function runSeamCompare(prev: ReportCard): void {
       policy,
       masonCount: prev.masonsAtStart,
       zones: false,
+      configOverrides: { demandRateScale: state.pressure },
     }).report;
     renderComparison(
       'The seam',
@@ -480,6 +486,11 @@ ui.masonsRange.addEventListener('input', () => {
   ui.masonsOut.textContent = ui.masonsRange.value;
 });
 ui.masonsRange.addEventListener('change', start);
+ui.pressureRange.addEventListener('input', () => {
+  state.pressure = Number(ui.pressureRange.value);
+  ui.pressureOut.textContent = `${state.pressure.toFixed(1)}×`;
+});
+ui.pressureRange.addEventListener('change', start);
 ui.seed.addEventListener('change', () => {
   state.seed = Number(ui.seed.value);
   start();

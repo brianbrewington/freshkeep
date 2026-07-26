@@ -171,6 +171,12 @@ export interface World {
   /** Radius of the outermost course, and of the inner keep ring. */
   ringOuter: number;
   keepRadius: number;
+  /**
+   * Where raiders have actually arrived from, binned by bearing. This is the
+   * OBSERVED record, not the generating distribution — the player is meant to
+   * infer where the traffic is, not be told.
+   */
+  arrivalBins: number[];
   nextRaiderId: number;
   /** Seconds until the next scheduled culling, if the level culls. */
   nextCull: number;

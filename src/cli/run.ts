@@ -55,7 +55,8 @@ if (args.help) {
   --solution <id>      worked solutions: ${SOLUTIONS.map((s) => s.id).join(' | ')}
   --policy <file>      a .rulebook file (DSL) or .json of auction weights
   --auction <json>     inline auction weights, e.g. '{"hub":2}'
-  --masons <n>         override mason count — the one dial that matters
+  --masons <n>         override mason count — the supply side of the ratio
+  --pressure <x>       scale raider arrival rate — the demand side (1 = as designed)
   --seed <n>           default 1
   --zones / --no-zones force zone mode on or off
   --duration <sec>     override level duration
@@ -72,7 +73,7 @@ const level = getLevel((args.level as string) ?? 1);
 const seed = Number(args.seed ?? 1);
 const masonCount = args.masons !== undefined ? Number(args.masons) : undefined;
 const zones = args.zones === true ? true : args['no-zones'] === true ? false : undefined;
-const configOverrides = args.duration ? {} : undefined;
+const configOverrides = args.pressure !== undefined ? { demandRateScale: Number(args.pressure) } : undefined;
 const levelSpec = args.duration
   ? { ...level, durationSeconds: Number(args.duration) }
   : level;

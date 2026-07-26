@@ -83,6 +83,13 @@ export interface Config {
   keepRepelChance: number;
 
   // --- Demand (hidden from the player) ------------------------------------
+  /**
+   * Scales every wall's arrival rate. Mason count is the supply side of the
+   * game's central ratio; this is the demand side, and it was previously
+   * unreachable — `demandRate` lives on the level, so no config override could
+   * touch it. 1 = as the level intended.
+   */
+  demandRateScale: number;
   /** Multiplier on arrival rate while a wall is in a burst ("raid party"). */
   burstMultiplier: number;
   /** Mean seconds a wall spends calm / bursting. */
@@ -154,6 +161,7 @@ export const DEFAULT_CONFIG: Config = {
   breachDamage: 6,
   keepRepelChance: 0.6,
 
+  demandRateScale: 1,
   burstMultiplier: 4,
   calmMeanSeconds: 22,
   burstMeanSeconds: 7,
