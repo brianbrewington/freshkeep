@@ -43,6 +43,15 @@ export interface Brick {
    * The player never sees this, only the arrivals it produces.
    */
   demandWeight: number;
+  /**
+   * Expected raider arrivals per second at THIS brick — its importance, the
+   * second axis of the (change rate, importance) plane. Computed at world build
+   * from the wall's share, the rank weights, the stationary burst factor and the
+   * bearing density over this brick's arc — so it accounts for peaked demand
+   * rather than assuming traffic follows arc width. The player never sees it; it
+   * is for scoring and analysis.
+   */
+  arrivalRate: number;
   /** Zone label in zone mode. Masons never cross zone boundaries. */
   zone: string | null;
   /** [0, 1]. */

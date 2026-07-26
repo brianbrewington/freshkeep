@@ -53,6 +53,24 @@ export interface ReportCard {
   /** Share of all mason-seconds spent repairing cosmetics. */
   wastedAttention: number;
 
+  /**
+   * Where the masonry actually went, per brick, on the two axes that decide
+   * whether it was worth going: how fast the brick turns over, and how much
+   * traffic it answers. Spares and hubs are absent — they defend a whole course
+   * rather than a bearing, so they do not sit on this plane.
+   */
+  allocation: Array<{
+    id: number;
+    size: 'S' | 'M' | 'L';
+    /** Integrity lost per second. */
+    changeRate: number;
+    /** Expected raider arrivals per second at this brick. */
+    arrivalRate: number;
+    /** Mason-seconds committed, travel included. */
+    seconds: number;
+    repairs: number;
+  }>;
+
   roast: string;
   teaches: string;
 }
@@ -116,6 +134,17 @@ export function buildReport(sim: Sim): ReportCard {
     hubRepairRatio: t.repairsCompleted > 0 ? t.hubRepairs / t.repairsCompleted : 0,
     cosmeticRepairs: t.cosmeticRepairs,
     wastedAttention: util.repairingWeathered,
+
+    allocation: w.bricks
+      .filter((b) => b.arrivalRate > 0 && !b.spare && !b.hub)
+      .map((b) => ({
+        id: b.id,
+        size: b.size,
+        changeRate: b.decayRate,
+        arrivalRate: b.arrivalRate,
+        seconds: Math.round((t.effortByBrick[b.id] ?? 0) * 100) / 100,
+        repairs: t.repairsByBrick[b.id] ?? 0,
+      })),
 
     roast: '',
     teaches: sim.level.teaches,

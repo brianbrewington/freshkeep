@@ -229,3 +229,88 @@ describe('mutation guard', () => {
     expect(report.breaches, 'an undamaged wall let someone through').toBe(0);
   });
 });
+
+describe('per-brick importance is a real prediction, not a label', () => {
+  it('sums to the level demand rate including bursts, and scales with pressure', () => {
+    for (const id of ['b1-keystone', 'bubble-trap', 'cornerstones']) {
+      const level = getLevel(id);
+      const sim = new Sim({ level, seed: 1, policy: presetPolicy('balanced') });
+      const cfg = sim.cfg;
+      // Bursts are part of the rate, not a garnish on it.
+      const burst =
+        (cfg.burstMeanSeconds * cfg.burstMultiplier + cfg.calmMeanSeconds) /
+        (cfg.burstMeanSeconds + cfg.calmMeanSeconds);
+      const sum = sim.world.bricks.reduce((s, b) => s + b.arrivalRate, 0);
+      expect(sum, `${id} importance does not account for all demand`).toBeCloseTo(
+        level.demandRate * burst,
+        6,
+      );
+
+      const doubled = new Sim({
+        level,
+        seed: 1,
+        policy: presetPolicy('balanced'),
+        configOverrides: { demandRateScale: 2 },
+      });
+      expect(doubled.world.bricks.reduce((s, b) => s + b.arrivalRate, 0)).toBeCloseTo(
+        level.demandRate * burst * 2,
+        6,
+      );
+    }
+  });
+
+  it('predicts the arrivals each brick actually receives', () => {
+    // If the predicted rate and the simulated spawns ever drifted apart, every
+    // score computed against importance would be measuring a model the game does
+    // not run. Checked on a peaked level, where arc and traffic disagree most.
+    const level = getLevel('bubble-trap');
+    const counts = new Map<number, number>();
+    let total = 0;
+    let seconds = 0;
+    for (let seed = 1; seed <= 24; seed++) {
+      const sim = new Sim({ level, seed, policy: presetPolicy('nearest'), stopOnDefeat: false }).run();
+      seconds += sim.world.t;
+      for (const e of spawns(sim)) {
+        const wall = sim.world.wallsById[e.wall];
+        const brick = sim.world.bricks[wall.grid[e.course][e.column]];
+        counts.set(brick.id, (counts.get(brick.id) ?? 0) + 1);
+        total++;
+      }
+    }
+    expect(total).toBeGreaterThan(3000);
+
+    const sim = new Sim({ level, seed: 1, policy: presetPolicy('nearest') });
+    const ranked = sim.world.bricks
+      .filter((b) => b.arrivalRate > 0)
+      .sort((a, b) => b.arrivalRate - a.arrivalRate);
+
+    // The busiest tenth by prediction really does take far more than the quietest.
+    const n = Math.max(1, Math.floor(ranked.length / 10));
+    const hottest = ranked.slice(0, n);
+    const coldest = ranked.slice(-n);
+    const share = (set: typeof ranked) =>
+      set.reduce((s, b) => s + (counts.get(b.id) ?? 0), 0) / total;
+    expect(share(hottest), 'predicted-hot bricks did not receive more raiders').toBeGreaterThan(
+      share(coldest) * 3,
+    );
+
+    // And the totals agree: predicted arrivals/sec vs observed arrivals/sec.
+    // Within a tolerance, because a run starts in a burst rather than in the
+    // stationary state, so short sieges skew a few percent hot.
+    const predicted = ranked.reduce((s, b) => s + b.arrivalRate, 0);
+    const ratio = total / seconds / predicted;
+    expect(ratio, `observed ${(total / seconds).toFixed(3)}/s vs predicted ${predicted.toFixed(3)}/s`).toBeGreaterThan(0.9);
+    expect(ratio).toBeLessThan(1.15);
+  });
+
+  it('finds the traffic on the NARROW bricks of The Bubble Trap', () => {
+    // The level's whole claim, as a number: the busiest bricks are the small ones.
+    const sim = new Sim({ level: getLevel('bubble-trap'), seed: 1, policy: presetPolicy('balanced') });
+    const ranked = sim.world.bricks
+      .filter((b) => b.arrivalRate > 0)
+      .sort((a, b) => b.arrivalRate - a.arrivalRate);
+    const topTen = ranked.slice(0, 10);
+    const small = topTen.filter((b) => b.size === 'S').length;
+    expect(small, 'the traffic should be piling onto narrow arcs').toBeGreaterThanOrEqual(7);
+  });
+});

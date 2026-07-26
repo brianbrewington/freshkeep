@@ -1,5 +1,5 @@
 import type { Brick, CourseBand, Mason, Raider, Wall, World } from './types.js';
-import { Config, courseBand, damageState, passProbability, DAMAGE_THRESHOLDS } from './config.js';
+import { Config, courseBand, courseIndexForBand, damageState, passProbability, DAMAGE_THRESHOLDS } from './config.js';
 import { ARRIVAL_BINS, BuildOptions, LevelSpec, buildWorld, inSector, norm, resolveConfig } from './level.js';
 import { Rng } from './rng.js';
 import type { EvalCtx, Policy } from './policy/ir.js';
@@ -30,6 +30,9 @@ export interface RunningTotals {
   reachedKing: number;
   repairsCompleted: number;
   hubRepairs: number;
+  /** Mason-seconds committed per brick, travel included — the rate allocation. */
+  effortByBrick: number[];
+  repairsByBrick: number[];
   cosmeticRepairs: number;
   kingDamage: number;
 }
@@ -95,6 +98,8 @@ export class Sim {
       reachedKing: 0,
       repairsCompleted: 0,
       hubRepairs: 0,
+      effortByBrick: new Array(this.world.bricks.length).fill(0),
+      repairsByBrick: new Array(this.world.bricks.length).fill(0),
       cosmeticRepairs: 0,
       kingDamage: 0,
     };
@@ -218,10 +223,13 @@ export class Sim {
       wall.lobes,
       wall.lobes.map((l) => l.weight),
     );
-    // Keep the draw inside the sector so a lobe near the seam cannot leak into
-    // the neighbouring wall's traffic.
-    const offset = norm(lobe.angle + this.rngDemand.normal() * lobe.width - wall.angleStart);
-    return norm(wall.angleStart + Math.min(Math.max(offset, 0), width));
+    // Keep the draw inside the sector so a lobe near the seam cannot leak into a
+    // neighbour's traffic. Use the SIGNED shortest angle: normalizing instead maps
+    // a sample a hair before the sector start to nearly TAU, which then clamps to
+    // the sector's far end — teleporting a lobe's lower tail across the kingdom.
+    const raw = lobe.angle + this.rngDemand.normal() * lobe.width - wall.angleStart;
+    const signed = Math.atan2(Math.sin(raw), Math.cos(raw));
+    return norm(wall.angleStart + Math.min(Math.max(signed, 0), width));
   }
 
   private spawnOne(wallId: string): void {
@@ -296,19 +304,8 @@ export class Sim {
     return best;
   }
 
-  /**
-   * Which ring a query of this rank actually lands on.
-   *
-   * `mid` used to floor to 0 whenever a level had two courses, quietly handing
-   * the top ring 95% of arrivals instead of the configured 70% and leaving the
-   * middle rank dead. With only two rings there is nowhere separate for mid to
-   * go, so it shares the inner ring with deep — but it no longer vanishes.
-   */
   private courseForBand(band: CourseBand, courses: number): number {
-    if (courses <= 1) return 0;
-    if (band === 'top') return 0;
-    if (band === 'deep') return courses - 1;
-    return Math.min(courses - 1, Math.max(1, Math.floor((courses - 1) / 2)));
+    return courseIndexForBand(band, courses);
   }
 
   // --- Raiders ------------------------------------------------------------
@@ -526,6 +523,7 @@ export class Sim {
       if (dist > this.cfg.arriveEpsilon) {
         m.state = 'traveling';
         m.timeTraveling += dt;
+        this.totals.effortByBrick[b.id] += dt;
         const stepLen = Math.min(dist, m.speed * dt);
         m.x += (dx / dist) * stepLen;
         m.y += (dy / dist) * stepLen;
@@ -554,10 +552,12 @@ export class Sim {
       const progress = Math.min(1, m.repairElapsed / this.cfg.masonSecondsPerRepair);
       b.integrity = m.repairFrom + (this.cfg.repairTarget - m.repairFrom) * progress;
       m.timeRepairing += dt;
+      this.totals.effortByBrick[b.id] += dt;
       if (m.taskWasCosmetic) m.timeRepairingCosmetic += dt;
 
       if (progress >= 1) {
         this.totals.repairsCompleted++;
+        this.totals.repairsByBrick[b.id]++;
         if (b.hub) this.totals.hubRepairs++;
         if (m.taskWasCosmetic) this.totals.cosmeticRepairs++;
         this.events.push({

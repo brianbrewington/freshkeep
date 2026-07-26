@@ -230,6 +230,8 @@ textarea {
 .bars { margin-bottom: 18px; }
 .bars .bar { display: flex; height: 22px; border-radius: 3px; overflow: hidden; border: 1px solid var(--line); }
 .bars .seg { display: flex; align-items: center; justify-content: center; font: 10px/1 var(--mono); color: #14110d; }
+.scatter { width: 100%; max-width: 420px; height: auto; display: block; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; }
+.bars .note { margin: 6px 0 0; font-size: 11px; color: var(--dim); }
 .bars .cap { font: 10px/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin-bottom: 4px; }
 .card .actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .thesis {

@@ -195,6 +195,18 @@ export function passProbability(integrity: number): number {
   return 1 - integrity / DAMAGE_THRESHOLDS.weathered;
 }
 
+/**
+ * Which ring a query of a given rank lands on. Shared by the spawner and by the
+ * per-brick importance calculation — if these two ever disagreed, the game would
+ * be scoring players against a demand model it does not actually run.
+ */
+export function courseIndexForBand(band: 'top' | 'mid' | 'deep', courses: number): number {
+  if (courses <= 1) return 0;
+  if (band === 'top') return 0;
+  if (band === 'deep') return courses - 1;
+  return Math.min(courses - 1, Math.max(1, Math.floor((courses - 1) / 2)));
+}
+
 export function courseBand(course: number, courses: number): 'top' | 'mid' | 'deep' {
   if (course === 0) return 'top';
   if (course >= courses - 1 && courses > 2) return 'deep';

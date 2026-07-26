@@ -1,5 +1,5 @@
 import type { Brick, BrickSize, DemandLobe, DemandState, Wall, World } from './types.js';
-import { Config, DEFAULT_CONFIG, SIZE_THROUGHPUT } from './config.js';
+import { Config, DEFAULT_CONFIG, SIZE_THROUGHPUT, courseIndexForBand } from './config.js';
 import { Rng } from './rng.js';
 
 /**
@@ -186,6 +186,7 @@ export function buildWorld(level: LevelSpec, seed: number, cfg: Config, opts: Bu
       throughput: SIZE_THROUGHPUT[size],
       // Traffic share is geometric now: the arc you cover is the traffic you take.
       demandWeight: init.angSpan,
+      arrivalRate: 0,
       integrity: 1,
       decayRate: 0,
       claimedBy: null,
@@ -371,6 +372,87 @@ export function buildWorld(level: LevelSpec, seed: number, cfg: Config, opts: Bu
         });
       }
       wall.lobes = lobes;
+    }
+  }
+
+  // --- Per-brick importance ----------------------------------------------
+  // Expected arrivals per second at each brick: the wall's share of demand, times
+  // the chance a query is of that rank, times the share of the wall's bearings
+  // that land on this brick's arc. Integrated numerically rather than assumed
+  // proportional to arc, because peaked demand makes those two things differ —
+  // which is the entire point of The Bubble Trap.
+  {
+    const totalShareAll = level.walls.reduce((s, w) => s + w.demandShare, 0);
+    // Walls spend part of their life in a burst at burstMultiplier, so the base
+    // rate is not the rate. This is the stationary average. (Runs start a touch
+    // hot: the burst state flips on the first tick rather than being drawn from
+    // the stationary distribution, which biases early arrivals upward a few %.)
+    const burstFactor =
+      (cfg.burstMeanSeconds * cfg.burstMultiplier + cfg.calmMeanSeconds) /
+      (cfg.burstMeanSeconds + cfg.calmMeanSeconds);
+    const cw = cfg.courseWeights;
+    const bands: Array<['top' | 'mid' | 'deep', number]> = [
+      ['top', cw.top],
+      ['mid', cw.mid],
+      ['deep', cw.deep],
+    ];
+    for (const spec of level.walls) {
+      const wall = wallsById[spec.id];
+      const wallRate =
+        (level.demandRate * cfg.demandRateScale * burstFactor * spec.demandShare) / totalShareAll;
+      const width = norm(wall.angleEnd - wall.angleStart) || TAU;
+
+      // Share of this wall's bearings landing on each column of a course.
+      const shareFor = (course: number): number[] => {
+        const row = wall.grid[course];
+        const shares = new Array(row.length).fill(0);
+        if (row.length === 0) return shares;
+        const STEPS = 4000;
+        // Integrate a little outside the sector: the sampler clamps strays to the
+        // nearest edge, so that mass really does land on the edge brick.
+        const pad = 0.35 * width;
+        let total = 0;
+        for (let i = 0; i < STEPS; i++) {
+          const off = -pad + ((width + 2 * pad) * (i + 0.5)) / STEPS;
+          let d = 0;
+          if (wall.lobes.length === 0) {
+            d = off >= 0 && off <= width ? 1 : 0;
+          } else {
+            for (const l of wall.lobes) {
+              const mu = norm(l.angle - wall.angleStart);
+              const z = (off - mu) / l.width;
+              d += l.weight * Math.exp(-0.5 * z * z);
+            }
+          }
+          if (d === 0) continue;
+          const clamped = Math.min(Math.max(off, 0), width);
+          const a = norm(wall.angleStart + clamped);
+          let idx = row.findIndex((id) => {
+            const b = bricks[id];
+            return inSector(a, norm(b.angle - b.angSpan / 2), norm(b.angle + b.angSpan / 2));
+          });
+          if (idx < 0) idx = clamped <= 0 ? 0 : row.length - 1;
+          shares[idx] += d;
+          total += d;
+        }
+        return total > 0 ? shares.map((v) => v / total) : shares;
+      };
+
+      const perCourse = new Map<number, number>();
+      for (const [band, w] of bands) {
+        const c = courseIndexForBand(band, level.courses);
+        perCourse.set(c, (perCourse.get(c) ?? 0) + w);
+      }
+      const bandTotal = cw.top + cw.mid + cw.deep;
+
+      for (let c = 0; c < level.courses; c++) {
+        const rankShare = (perCourse.get(c) ?? 0) / bandTotal;
+        if (rankShare === 0) continue;
+        const shares = shareFor(c);
+        wall.grid[c].forEach((id, k) => {
+          bricks[id].arrivalRate += wallRate * rankShare * shares[k];
+        });
+      }
     }
   }
 

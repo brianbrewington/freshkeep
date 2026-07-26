@@ -20,6 +20,7 @@ function brick(over: Partial<Brick> = {}): Brick {
     size: 'M',
     throughput: 3,
     demandWeight: 3,
+    arrivalRate: 0.01,
     integrity: 1,
     decayRate: 0.01,
     claimedBy: null,
