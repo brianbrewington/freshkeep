@@ -7,3 +7,6 @@ dist/
 # Telemetry dumps from the headless runner — research data, but not source.
 *.run.json
 runs/
+
+# Generated analysis artifacts
+scatter-*.html
