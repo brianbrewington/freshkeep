@@ -2,6 +2,8 @@
   "name": "freshkeep",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
+  "author": "Brian Brewington",
   "type": "module",
   "description": "What do you look at when there is more than you can watch? A game about allocating finite attention across sources that go stale on their own schedule.",
   "scripts": {

@@ -38,7 +38,8 @@ policy was good or whether you were merely well staffed.
 That button is the argument. Everything else is scaffolding for it.
 
 The underlying model is not invented for the game: it comes from Brian
-Brewington's dissertation, *Keeping Up With the Changing Web* (Dartmouth), on how
+Brewington's dissertation, *Keeping Up With the Changing Web* (Dartmouth, 2000),
+on how
 often to revisit sources that change at rates you can only estimate. The
 counterintuitive results the levels teach — that the fastest-changing sources can
 be the ones worth abandoning, that a good allocation beats a naive one by more
@@ -449,6 +450,14 @@ behaviour; the editor should lint it.
 No optimal routing or TSP solving — greedy plus hysteresis, full stop. No
 fog-of-war. No multiplayer, accounts or backend. No raider HP or combat. No
 natural-language policy execution without a visible DSL compilation step.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Use it, fork it, teach with it.
+
+The underlying research is separate from the code licence: the allocation results
+the levels encode are published work, cited above, and attribution there is a
+matter of scholarly courtesy rather than a condition of the licence.
 
 ## Next
 
