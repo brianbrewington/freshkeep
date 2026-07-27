@@ -432,6 +432,36 @@ arc edges, seam ownership, `inSector` boundary and wrap cases, and full
 spawn-*sequence* equality across policies and crew sizes (the demand-isolation
 guarantee was previously checked only as a total arrival count).
 
+## A known weakness in the score, deliberately left visible
+
+`freshnessAge` weights staleness by a brick's **arc**, which is a proxy for its
+traffic and not the same thing. That produces a real defect: on The Seam the
+zone-locked run can post a *better* average freshness while *losing*, because
+idle crews polish a quiet wall and lift an average taken over the wrong
+denominator. There is a test asserting the inversion still happens, so it cannot
+disappear silently.
+
+**An attempted fix made it worse and was reverted.** Re-weighting by
+`arrivalRate` — the true expected arrivals at each brick — looks obviously right
+and separates the worked solutions much more sharply (the margin on The Bubble
+Trap widened about forty-fold). But spares, hubs and keep bricks have an
+`arrivalRate` of zero: nothing is ever *aimed* at them, they defend what is aimed
+at their course. Weighting by arrivals therefore drops a quarter to a third of
+every board out of the score, and the score then **pays a policy to let the
+redundancy rot** — measured at 2–18% score improvement while the king went from
+full health to dead. On `b6-spare`, the level built to teach redundancy, the
+worked solution ranked last of six while winning every seed.
+
+The honest fix is to give those bricks the weight they actually carry — a spare
+defends its whole course, so its weight is that course's total arrivals; a hub's
+is the sum across both walls it joins. Until that lands the arc-weighted score
+stays, defect and all, because a metric with a *known* bias is safer than one
+with a hidden one.
+
+The general property worth asserting, and not yet asserted: **the score must
+never rank a losing policy above a winning one.** It currently fails that on The
+Seam, The Culling and `b6-spare`.
+
 ## Decisions the spec left open
 
 Recorded here because they are judgment calls, not derivations.
