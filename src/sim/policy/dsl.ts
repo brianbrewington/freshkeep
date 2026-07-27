@@ -66,9 +66,13 @@ const SIZE_ORD: Record<string, number> = { s: 0, m: 1, l: 2 };
 const BAND_ORD: Record<string, number> = { top: 0, mid: 1, middle: 1, deep: 2 };
 
 const NUMERIC_FIELDS: Record<string, (c: EvalCtx) => number> = {
-  integrity: (c) => c.brick.integrity,
-  damage: (c) => 1 - c.brick.integrity,
-  staleness: (c) => 1 - c.brick.integrity,
+  // BELIEF, always. A policy can only act on what is observable; there is
+  // deliberately no way to ask for the hidden truth.
+  integrity: (c) => c.brick.belief,
+  damage: (c) => 1 - c.brick.belief,
+  staleness: (c) => 1 - c.brick.belief,
+  /** Seconds since a mason last finished work here. */
+  age: (c) => Math.max(0, c.now - c.brick.lastSeen),
   decayrate: (c) => c.brick.decayRate,
   decay: (c) => c.brick.decayRate,
   throughput: (c) => c.brick.throughput,
@@ -94,14 +98,14 @@ const BOOLEAN_FIELDS: Record<string, Predicate> = {
   hub: (c) => c.brick.hub,
   spare: (c) => c.brick.spare,
   keep: (c) => c.brick.keep,
-  intact: (c) => damageState(c.brick.integrity) === 'intact',
-  weathered: (c) => damageState(c.brick.integrity) === 'weathered',
-  cracked: (c) => damageState(c.brick.integrity) === 'cracked',
-  rubble: (c) => damageState(c.brick.integrity) === 'rubble',
+  intact: (c) => damageState(c.brick.belief) === 'intact',
+  weathered: (c) => damageState(c.brick.belief) === 'weathered',
+  cracked: (c) => damageState(c.brick.belief) === 'cracked',
+  rubble: (c) => damageState(c.brick.belief) === 'rubble',
   /** Anything not at full integrity. */
-  damaged: (c) => c.brick.integrity < 1,
+  damaged: (c) => c.brick.belief < 1,
   /** Structurally passable-ish: cracked or rubble. What actually loses you the game. */
-  structural: (c) => c.brick.integrity < DAMAGE_THRESHOLDS.weathered,
+  structural: (c) => c.brick.belief < DAMAGE_THRESHOLDS.weathered,
   top: (c) => c.band === 'top',
   mid: (c) => c.band === 'mid',
   deep: (c) => c.band === 'deep',

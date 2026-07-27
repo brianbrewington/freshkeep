@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   BASICS,
+  compileRulebook,
   SOLUTIONS,
   Sim,
   getLevel,
@@ -151,5 +152,151 @@ describe('demand distribution', () => {
         median,
       );
     }
+  });
+});
+
+describe('uncertainty — a kingdom you remember rather than see', () => {
+  const level = getLevel('b7-no-alarm');
+
+  it('hides the truth and shows only confidence', () => {
+    const sim = new Sim({ level, seed: 1, policy: presetPolicy('firefighter') });
+    // Everything starts whole, so belief is honest at age zero.
+    for (const b of sim.world.bricks) {
+      expect(b.integrity).toBe(1);
+      expect(b.belief).toBe(1);
+    }
+    let diverged = false;
+    while (!sim.done) {
+      sim.step();
+      for (const b of sim.world.bricks) {
+        if (Math.abs(b.belief - b.integrity) > 0.05) diverged = true;
+        expect(b.belief).toBeGreaterThanOrEqual(0);
+        expect(b.belief).toBeLessThanOrEqual(1);
+      }
+    }
+    // If belief and truth never parted company there is no uncertainty to teach.
+    expect(diverged, 'belief tracked truth exactly — nothing is hidden').toBe(true);
+  });
+
+  it('lets truth sit still and then jump, rather than draining', () => {
+    const sim = new Sim({ level, seed: 2, policy: compileRulebook('DEFAULT: none', 'do nothing') });
+    const watched = sim.world.bricks[1];
+    let unchangedTicks = 0;
+    let jumps = 0;
+    let prev = watched.integrity;
+    while (!sim.done) {
+      sim.step();
+      if (watched.integrity === prev) unchangedTicks++;
+      else jumps++;
+      prev = watched.integrity;
+    }
+    // A steadily draining brick changes every single tick; a Poisson one does not.
+    expect(jumps).toBeGreaterThan(0);
+    expect(unchangedTicks).toBeGreaterThan(jumps * 20);
+  });
+
+  it('draws change schedules that are exponential, not clockwork', () => {
+    // A mean-only check passes for perfectly regular intervals, which is the one
+    // thing this must rule out. Coefficient of variation of Exp is 1; clockwork
+    // is 0.
+    // One world holds only a couple of dozen change events, which is far too few
+    // to say anything about a distribution — pool across many.
+    const gaps: number[] = [];
+    for (let seed = 1; seed <= 120; seed++) {
+      const sim = new Sim({ level, seed, policy: presetPolicy('nearest') });
+      for (const b of sim.world.bricks) {
+        for (let i = 1; i < b.changeTimes.length; i++) {
+          gaps.push((b.changeTimes[i] - b.changeTimes[i - 1]) * b.decayRate);
+        }
+      }
+    }
+    expect(gaps.length).toBeGreaterThan(800);
+    const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    const sd = Math.sqrt(gaps.reduce((a, b) => a + (b - mean) ** 2, 0) / gaps.length);
+    expect(mean).toBeGreaterThan(0.85);
+    expect(mean).toBeLessThan(1.15);
+    expect(sd / mean, 'inter-arrivals are too regular to be memoryless').toBeGreaterThan(0.8);
+  });
+
+  it('keeps the world identical across policies — the schedule is not yours to move', () => {
+    const schedule = (p: ReturnType<typeof presetPolicy>) => {
+      const sim = new Sim({ level, seed: 3, policy: p, stopOnDefeat: false }).run();
+      return sim.world.bricks.map((b) => b.changeTimes.map((t) => t.toFixed(4)).join(',')).join('|');
+    };
+    const a = schedule(presetPolicy('nearest'));
+    expect(a).toBe(schedule(presetPolicy('firefighter')));
+    // Guard against passing vacuously on empty schedules: there has to be a
+    // world there for its independence to mean anything.
+    const sim = new Sim({ level, seed: 3, policy: presetPolicy('nearest') });
+    const events = sim.world.bricks.reduce((n, b) => n + b.changeTimes.length, 0);
+    expect(events, 'no change events at all — independence would be trivially true').toBeGreaterThan(10);
+  });
+
+  it('reports whether the board was telling the truth', () => {
+    const { report } = runSim({ level, seed: 1, policy: presetPolicy('firefighter') });
+    expect(report.reliability.length).toBeGreaterThan(0);
+    for (const band of report.reliability) {
+      expect(band.n).toBeGreaterThan(0);
+      expect(band.held).toBeGreaterThanOrEqual(0);
+      expect(band.held).toBeLessThanOrEqual(1);
+    }
+    // Confidence should be worth something: the most-confident band with a real
+    // sample must hold more often than the least-confident one.
+    const solid = report.reliability.filter((b) => b.n >= 20);
+    if (solid.length >= 2) {
+      expect(solid[solid.length - 1].held).toBeGreaterThan(solid[0].held);
+    }
+  });
+
+  it('waiting for an alarm loses, because there is no alarm', () => {
+    const survived = (policy: ReturnType<typeof presetPolicy>) =>
+      SEEDS.filter((seed) => runSim({ level, seed, policy }).report.outcome === 'survived').length;
+    // Breach counts rather than win rates wherever possible: outcomes here are
+    // genuinely noisy (a compound-Poisson world has a coefficient of variation
+    // near 1), so survival has little power and breaches have a lot.
+    const breaches = (policy: ReturnType<typeof presetPolicy>) =>
+      SEEDS.reduce((a, seed) => a + runSim({ level, seed, policy }).report.breaches, 0) / SEEDS.length;
+
+    expect(survived(solutionPolicy('b7-answer')), 'a short round should hold it').toBeGreaterThanOrEqual(4);
+    expect(survived(presetPolicy('firefighter')), 'threshold play should fail').toBeLessThanOrEqual(1);
+
+    const sweep = breaches(solutionPolicy('b7-answer'));
+    expect(breaches(presetPolicy('firefighter')), 'waiting should leak far more').toBeGreaterThan(sweep * 1.4);
+    // The previous level's right answer is a poor answer here: `cracked` is a
+    // trigger, and triggers do not fire in a kingdom you cannot see.
+    expect(breaches(solutionPolicy('b2-answer')), 'trigger-based play should leak more').toBeGreaterThan(
+      sweep * 1.4,
+    );
+  });
+
+  it('resolves raiders against TRUTH, not against what the player was shown', () => {
+    // The load-bearing invariant of the whole model, and it was unasserted.
+    // If resolution read belief, a brick displaying 0.5 could never be passed —
+    // passProbability is zero for anything at or above the cracked threshold.
+    // So a breach through a confident-looking brick can only happen if the
+    // hidden truth is what decides.
+    let throughConfidentWall = 0;
+    let breaches = 0;
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      const sim = new Sim({ level, seed, policy: compileRulebook('DEFAULT: none', 'do nothing') });
+      let seen = 0;
+      while (!sim.done) {
+        sim.step();
+        for (let i = seen; i < sim.events.length; i++) {
+          const e = sim.events[i];
+          if (e.type !== 'breach') continue;
+          breaches++;
+          const set = sim.targetSet(e.wall, e.course, e.column);
+          const shown = 1 - set.reduce((p, b) => p * (1 - b.belief), 1);
+          if (shown >= 0.5) throughConfidentWall++;
+        }
+        seen = sim.events.length;
+      }
+    }
+    expect(breaches).toBeGreaterThan(0);
+    expect(
+      throughConfidentWall,
+      'no raider ever passed a wall the player was reading as sound — resolution is using belief',
+    ).toBeGreaterThan(0);
   });
 });

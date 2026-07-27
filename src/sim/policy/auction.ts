@@ -35,7 +35,7 @@ export function bidOf(w: AuctionWeights, c: EvalCtx): number {
   return (
     w.throughput * (b.throughput / MAX_THROUGHPUT) +
     w.decay * decayNorm +
-    w.damage * (1 - b.integrity) +
+    w.damage * (1 - b.belief) +
     w.hub * hubBonus +
     w.rank * c.cfg.rankValue[c.band]
   );
@@ -51,7 +51,7 @@ export function compileAuction(weights: AuctionWeights, name = 'auction'): Polic
     bid: (ctx) => bidOf(w, ctx),
     evaluate(ctx) {
       // A brick at full integrity has nothing to bid for.
-      if (ctx.brick.integrity >= 1) return null;
+      if (ctx.brick.belief >= 1) return null;
       const bid = bidOf(w, ctx);
       if (bid <= 0) return null;
       // Bid PER DISTANCE — travel time is priced in, which is why this mode
@@ -60,7 +60,7 @@ export function compileAuction(weights: AuctionWeights, name = 'auction'): Polic
     },
     interrupt(ctx) {
       // In auction mode the only interrupt is a brick about to become rubble nearby.
-      return ctx.brick.integrity < 0.12 && ctx.distance < 120;
+      return ctx.brick.belief < 0.12 && ctx.distance < 120;
     },
   };
 }

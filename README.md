@@ -153,7 +153,38 @@ That is the whole thesis in three lines. With plenty of masons almost everything
 gets attention and any policy looks defensible; as capacity falls you are forced
 to choose, and *which* things you abandon is the only thing that matters.
 
-## The basics — six one-mason kingdoms
+## Accumulated uncertainty
+
+On `linear` levels the bar is damage: it drains steadily, and you can compute the
+exact moment a brick will crack. That makes "wait until it gets bad" a real
+strategy, which is fine for teaching one variable at a time and wrong about how
+information actually goes stale.
+
+On `uncertain` levels the bar is **confidence**. A brick's true adequacy is a
+compound Poisson process — it sits unchanged and then jumps down at random times.
+What the player sees is the probability it still turns a raider away, given how
+long since a mason was last there:
+
+```
+belief = 1 − E[ passProbability(adequacy) ]      given μ = λ · age
+```
+
+So `1 − bar` is accumulated uncertainty, and it is denominated in the game's own
+units: the chance a raider gets through here. **Raiders resolve against the
+hidden truth, not against the bar.** The board can read green while a raider
+walks through. You do not lose because the wall looked bad; you lose because it
+looked fine.
+
+Two things this deliberately is not. It is not mean adequacy — `passProbability`
+is convex, so a mean bar would read "no risk at all" across its whole green range
+while real risk climbed past a third, which is a lie that never resolves. And it
+is not `e^(−λ·age)`, the obvious first guess: that is the expectation of the
+hidden quantity, not of the thing that matters.
+
+`b7-no-alarm` teaches it. Everything else stays `linear`, so no existing level's
+balance moved.
+
+## The basics — seven one-mason kingdoms
 
 Levels small enough to read at a glance. One mason, one ring, one idea; no hubs,
 no zones, no keep ring, so a breach hits the king immediately and cause and
@@ -169,9 +200,12 @@ solution, watch the identical siege hold.
 | The Twitchy One | drain rate says how *often*, never how *much* |
 | Two Gates | one mason cannot be in two places; the same rulebook holds it with two |
 | The Spare | a raider only passes when its *whole* target set has crumbled |
+| No Alarm Will Come | in a kingdom you cannot see, there is no "about to break" to react to — waiting loses, committing to a round wins |
 
 `test/basics.test.ts` asserts the pairing for each: the solution holds on ≥4 of 5
-seeds, the named wrong preset holds on ≤1. That is what "the lesson is plain"
+seeds, the named wrong preset holds on ≤1. On the uncertain level it also asserts
+in breach counts rather than win rates — a compound-Poisson world has a
+coefficient of variation near 1, so survival carries little statistical power. That is what "the lesson is plain"
 means, stated as an assertion rather than a hope.
 
 ## The visual language
@@ -215,7 +249,7 @@ INTERRUPT WHEN any brick integrity < 0.15 AND distance < 30
 IGNORE weathered
 ```
 
-Fields: `integrity` `damage` `decayRate` `traffic` (a.k.a. `arc`) `throughput`
+Fields: `integrity` `damage` `age` `decayRate` `traffic` (a.k.a. `arc`) `throughput`
 `distance` `course` `size` `wall`, and the yes/no properties `hub` `spare` `keep`
 `intact` `weathered` `cracked` `rubble` `damaged` `structural` `top` `mid` `deep`.
 `AND` / `OR` / `NOT` / parentheses. `BY` orders within a tier: `nearest`
@@ -227,6 +261,13 @@ Two of those are easy to confuse, deliberately: **`throughput` is the size class
 ring it actually covers. On most levels they agree. On The Bubble Trap they do
 not, and the gap is the lesson. `traffic` used to alias `throughput`, which meant
 a field named for traffic returned size — exactly the fallacy the game is about.
+
+**`integrity` always means what the player can SEE.** On `linear` levels that is
+the damage; on `uncertain` levels it is the confidence, and there is deliberately
+no way for a policy to ask for the hidden truth. `age` is seconds since a mason
+last finished work there — the honest primitive under uncertainty, since time
+since the last *change* tells you nothing and time since the last *visit* tells
+you everything.
 
 `wall` accepts only `=` and `!=`; walls have no ordering, so `wall > E` is a parse
 error rather than something that quietly compiles to `wall = E`.
@@ -466,13 +507,6 @@ number of questions about it, each costing prep. Then you commit a rulebook and
 cannot edit it while the siege runs. The skill is knowing which uncertainty would
 actually change your policy — most people ask what the biggest brick is; the
 question that pays is usually about variance.
-
-**Accumulated uncertainty.** Decay is currently linear and therefore exactly
-predictable, which makes the optimal policy a fixed rotation you can time with a
-stopwatch. Real sources change memorylessly. The bar should decay as
-`e^(−λ·age)` — the probability the brick still holds — so what drains is not the
-wall but your *confidence* in it, and the mason cannot know what he'll find until
-he arrives.
 
 **The frontier level and the optimal boundary.** With both axes computed, the
 next level is bricks scattered across the (change rate, traffic) plane where the

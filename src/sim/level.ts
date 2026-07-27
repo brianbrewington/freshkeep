@@ -106,6 +106,13 @@ export interface LevelSpec {
   /** Relative frequency of S / M / L bricks. */
   sizeMix: { S: number; M: number; L: number };
   /**
+   * How the world goes stale. `linear` drains steadily and is exactly
+   * predictable — right for teaching one variable at a time. `uncertain` makes
+   * truth jump at Poisson times and shows the player only their confidence, so
+   * there is no observable "about to break" and no just-in-time play.
+   */
+  decayModel?: 'linear' | 'uncertain';
+  /**
    * Per-brick decay rate override; omit for the log-normal default. Receives the
    * resolved config so a level can scale off `decayMedian` rather than hardcoding
    * rates — otherwise tuning knobs silently do nothing on that level.
@@ -188,6 +195,11 @@ export function buildWorld(level: LevelSpec, seed: number, cfg: Config, opts: Bu
       demandWeight: init.angSpan,
       arrivalRate: 0,
       integrity: 1,
+      belief: 1,
+      lastSeen: 0,
+      changeTimes: [],
+      changeFactors: [],
+      changeIndex: 0,
       decayRate: 0,
       claimedBy: null,
       zone: init.zone ?? null,
@@ -196,7 +208,12 @@ export function buildWorld(level: LevelSpec, seed: number, cfg: Config, opts: Bu
       plan?.decay ??
       (level.decayRateFor ? level.decayRateFor(b, rng, cfg) : rng.logNormal(cfg.decayMedian, cfg.decaySigma));
     // Bricks start partly worn, so the player is never handed a pristine board.
-    b.integrity = plan?.integrity ?? Math.min(1, Math.max(0.5, 1 - rng.next() * 0.35));
+    // Under `uncertain` they start whole: belief reads 1 at age 0, and seeding
+    // truth below that would put a permanent bias on exactly the never-visited
+    // population the calibration metric exists to expose.
+    b.integrity =
+      level.decayModel === 'uncertain' ? 1 : plan?.integrity ?? Math.min(1, Math.max(0.5, 1 - rng.next() * 0.35));
+    b.belief = b.integrity;
     bricks.push(b);
     return b;
   };
@@ -343,6 +360,26 @@ export function buildWorld(level: LevelSpec, seed: number, cfg: Config, opts: Bu
   walls.push(keepWall);
   wallsById['K'] = keepWall;
 
+  // --- Change schedules ---------------------------------------------------
+  // Drawn from their OWN stream, after every other brick property, and out to a
+  // time horizon rather than a fixed count. Two reasons: drawing inside
+  // makeBrick from the world stream would shift every subsequent draw and
+  // silently alter sizes and rates on every existing level; and a fixed count
+  // lets a brick exhaust its schedule and go permanently pristine late on.
+  if (level.decayModel === 'uncertain') {
+    const decayRng = new Rng(seed).fork('decay');
+    const horizon = level.durationSeconds * 1.5 + 60;
+    for (const b of bricks) {
+      let t = 0;
+      while (true) {
+        t += decayRng.exponential(b.decayRate);
+        if (!(t < horizon)) break;
+        b.changeTimes.push(t);
+        b.changeFactors.push(decayRng.next());
+      }
+    }
+  }
+
   // --- Demand lobes -------------------------------------------------------
   // Flat demand spreads arrivals evenly around the sector. Peaky demand piles
   // them onto a few bearings, the way real request traffic piles onto a few
@@ -478,6 +515,7 @@ export function buildWorld(level: LevelSpec, seed: number, cfg: Config, opts: Bu
       interrupted: false,
       taskWasCosmetic: false,
       repairFrom: 0,
+      beliefFrom: 0,
       repairElapsed: 0,
       timeIdle: 0,
       timeTraveling: 0,

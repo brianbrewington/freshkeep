@@ -230,6 +230,12 @@ textarea {
 .bars { margin-bottom: 18px; }
 .bars .bar { display: flex; height: 22px; border-radius: 3px; overflow: hidden; border: 1px solid var(--line); }
 .bars .seg { display: flex; align-items: center; justify-content: center; font: 10px/1 var(--mono); color: #14110d; }
+.rel-row { display: grid; grid-template-columns: 74px 1fr 74px 52px; gap: 8px; align-items: center; font: 11px/1.7 var(--mono); color: var(--dim); }
+.rel-track { height: 8px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+.rel-fill { height: 100%; background: var(--good); }
+.rel-fill.lying { background: var(--bad); }
+.rel-v.lying { color: var(--bad); }
+.rel-n { text-align: right; opacity: 0.6; }
 .scatter { width: 100%; max-width: 420px; height: auto; display: block; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; }
 .bars .note { margin: 6px 0 0; font-size: 11px; color: var(--dim); }
 .bars .cap { font: 10px/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin-bottom: 4px; }

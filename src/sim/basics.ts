@@ -176,6 +176,43 @@ export const BASICS: LevelSpec[] = [
   },
 ];
 
+/**
+ * The seventh basic retires Fair Weather's rule on purpose, rather than letting
+ * the campaign quietly invalidate it — and it teaches the thing that only
+ * uncertainty can teach.
+ *
+ * Under `linear` you can wait: damage is visible, so "act when it gets bad" is a
+ * real strategy. Here there is nothing to wait FOR. Confidence drains whether or
+ * not anything has happened, no brick ever looks like an emergency, and by the
+ * time one does you have been leaking for a minute. The only defence is a rate.
+ */
+export const B7: LevelSpec = {
+  ...BASE,
+  id: 'b7-no-alarm',
+  name: 'No Alarm Will Come',
+  blurb:
+    'A kingdom you cannot see — only remember. One brick crumbles loudly and six sit quiet, and you will never be told which of them is letting raiders through.',
+  teaches:
+    'There is no "about to break" to react to, because you cannot see the wall — only how long since you looked. Waiting for an alarm loses; committing to a short round is the whole of the strategy.',
+  durationSeconds: 150,
+  kingHp: 230,
+  demandRate: 1.0,
+  decayModel: 'uncertain',
+  walls: ring([
+    // The loud one. Confidence here collapses faster than one mason can hold it,
+    // and it carries a fifth of the traffic. Chasing it is the losing line.
+    { size: 'M', span: 0.2, decay: 0.09, integrity: 1 },
+    // Six quiet bricks carrying four fifths of the traffic between them. None of
+    // them ever looks alarming. All of them leak.
+    ...Array.from({ length: 6 }, () => ({ size: 'M' as const, span: 0.8 / 6, decay: 0.012, integrity: 1 })),
+  ]),
+  // FIREFIGHTER waits for integrity < 0.15. That signal never arrives in time,
+  // because there is no signal — only age.
+  wrongPreset: 'firefighter',
+};
+
+BASICS.push(B7);
+
 export function isBasic(id: string): boolean {
   return BASICS.some((l) => l.id === id);
 }

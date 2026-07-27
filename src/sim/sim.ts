@@ -1,5 +1,5 @@
 import type { Brick, CourseBand, Mason, Raider, Wall, World } from './types.js';
-import { Config, courseBand, courseIndexForBand, damageState, passProbability, DAMAGE_THRESHOLDS } from './config.js';
+import { Config, courseBand, courseIndexForBand, damageState, holdProbability, passProbability, DAMAGE_THRESHOLDS } from './config.js';
 import { ARRIVAL_BINS, BuildOptions, LevelSpec, buildWorld, inSector, norm, resolveConfig } from './level.js';
 import { Rng } from './rng.js';
 import type { EvalCtx, Policy } from './policy/ir.js';
@@ -30,6 +30,15 @@ export interface RunningTotals {
   reachedKing: number;
   repairsCompleted: number;
   hubRepairs: number;
+  /**
+   * Reliability: for each band of displayed confidence, how often the wall
+   * actually held. Built only from what the player could already see and what
+   * then happened — no generating distribution anywhere near it.
+   */
+  reliabilityHeld: number[];
+  reliabilityTotal: number[];
+  /** Breaches through a brick the player was reading as safe. */
+  confidentlyWrong: number;
   /** Mason-seconds committed per brick, travel included — the rate allocation. */
   effortByBrick: number[];
   repairsByBrick: number[];
@@ -98,6 +107,9 @@ export class Sim {
       reachedKing: 0,
       repairsCompleted: 0,
       hubRepairs: 0,
+      reliabilityHeld: new Array(RELIABILITY_BANDS).fill(0),
+      reliabilityTotal: new Array(RELIABILITY_BANDS).fill(0),
+      confidentlyWrong: 0,
       effortByBrick: new Array(this.world.bricks.length).fill(0),
       repairsByBrick: new Array(this.world.bricks.length).fill(0),
       cosmeticRepairs: 0,
@@ -154,10 +166,29 @@ export class Sim {
   // --- Decay --------------------------------------------------------------
 
   private decay(dt: number): void {
+    const uncertain = this.level.decayModel === 'uncertain';
     for (const b of this.world.bricks) {
-      if (b.integrity <= 0) continue;
       const before = b.integrity;
-      b.integrity = Math.max(0, b.integrity - b.decayRate * dt);
+
+      if (uncertain) {
+        // Truth sits still and then jumps. Events that land while a mason has
+        // hands on the brick are overwritten by the repair, which is correct:
+        // you re-crawled after the change, so you hold the new version.
+        while (b.changeIndex < b.changeTimes.length && b.changeTimes[b.changeIndex] <= this.world.t) {
+          b.integrity *= b.changeFactors[b.changeIndex];
+          b.changeIndex++;
+        }
+        // Truth is a product of positive factors, so it never reaches zero on its
+        // own. Snap the last sliver so rubble stays reachable.
+        if (b.integrity < 0.02) b.integrity = 0;
+        // Belief: the chance it still turns a raider away, given how long since
+        // anyone looked. This is the only quantity the player ever sees.
+        b.belief = holdProbability(b.decayRate * (this.world.t - b.lastSeen));
+      } else {
+        if (b.integrity > 0) b.integrity = Math.max(0, b.integrity - b.decayRate * dt);
+        b.belief = b.integrity;
+      }
+
       if (before > 0 && b.integrity <= 0) {
         this.events.push({ t: round(this.world.t), type: 'rubble', brick: b.id, wall: b.wallIds[0] });
       }
@@ -375,6 +406,18 @@ export class Sim {
     return out;
   }
 
+  /** Record what the player was shown, against what then happened. */
+  private recordReliability(set: Brick[], held: boolean): void {
+    if (set.length === 0) return;
+    // The wall holds if ANY of the set does, so what the player was shown about
+    // this bearing is the chance the whole set holds — not the head brick alone.
+    const shown = 1 - set.reduce((p, b) => p * (1 - b.belief), 1);
+    const band = Math.min(RELIABILITY_BANDS - 1, Math.max(0, Math.floor(shown * RELIABILITY_BANDS)));
+    this.totals.reliabilityTotal[band]++;
+    if (held) this.totals.reliabilityHeld[band]++;
+    else if (shown >= CONFIDENT) this.totals.confidentlyWrong++;
+  }
+
   private resolveAtWall(r: Raider): boolean {
     const set = this.targetSet(r.wallId, r.course, r.column);
     const blocker = set.find((b) => b.integrity >= DAMAGE_THRESHOLDS.weathered);
@@ -391,6 +434,8 @@ export class Sim {
         by = set.reduce((best, b) => (b.integrity > this.world.bricks[best].integrity ? b.id : best), set[0].id);
       }
     }
+
+    this.recordReliability(set, !pass);
 
     if (!pass) {
       r.state = 'repelled';
@@ -482,13 +527,17 @@ export class Sim {
       mason: m,
       distance: Math.hypot(b.x - m.x, b.y - m.y),
       band: this.bands[b.id],
+      now: this.world.t,
       cfg: this.cfg,
     };
   }
 
   /** Is there enough integrity missing to justify a task at all? */
   private worthRepairing(b: Brick): boolean {
-    return this.cfg.repairTarget - b.integrity >= this.cfg.minRepairBenefit;
+    // Belief, not truth. Under `uncertain` a large mass of bricks sit at exactly
+    // full truth, and gating on that would make them permanently undispatchable —
+    // you could never go and look at the thing you are unsure about.
+    return this.cfg.repairTarget - b.belief >= this.cfg.minRepairBenefit;
   }
 
   private available(m: Mason, b: Brick): boolean {
@@ -532,8 +581,17 @@ export class Sim {
 
       if (m.state !== 'repairing') {
         m.state = 'repairing';
-        m.taskWasCosmetic = damageState(b.integrity) === 'weathered' || b.integrity >= DAMAGE_THRESHOLDS.intact;
+        // "Cosmetic" is a claim about visible damage, and under `uncertain`
+        // there is no visible damage — only confidence, which drains whether or
+        // not anything happened. Applying the damage bands to a probability
+        // labels every correct revisit as waste. Suppressed there; the
+        // reliability diagram is the honest replacement.
+        m.taskWasCosmetic =
+          this.level.decayModel === 'uncertain'
+            ? false
+            : damageState(b.belief) === 'weathered' || b.belief >= DAMAGE_THRESHOLDS.intact;
         m.repairFrom = b.integrity;
+        m.beliefFrom = b.belief;
         m.repairElapsed = 0;
         this.events.push({
           t: round(this.world.t),
@@ -551,11 +609,16 @@ export class Sim {
       m.repairElapsed += dt;
       const progress = Math.min(1, m.repairElapsed / this.cfg.masonSecondsPerRepair);
       b.integrity = m.repairFrom + (this.cfg.repairTarget - m.repairFrom) * progress;
+      b.belief = m.beliefFrom + (this.cfg.repairTarget - m.beliefFrom) * progress;
       m.timeRepairing += dt;
       this.totals.effortByBrick[b.id] += dt;
       if (m.taskWasCosmetic) m.timeRepairingCosmetic += dt;
 
       if (progress >= 1) {
+        // Age resets on COMPLETION only. An abandoned repair leaves truth
+        // arbitrary, and resetting age there would let belief read full against
+        // it — a bias that would depend on how interrupt-happy the policy is.
+        b.lastSeen = this.world.t;
         this.totals.repairsCompleted++;
         this.totals.repairsByBrick[b.id]++;
         if (b.hub) this.totals.hubRepairs++;
@@ -616,7 +679,7 @@ export class Sim {
   private checkInterrupt(m: Mason): void {
     if (m.taskBrickId !== null) {
       const cur = this.world.bricks[m.taskBrickId];
-      if (cur.integrity >= this.cfg.repairTarget && this.cfg.abandonIfTaskFullyRepaired) {
+      if (cur.belief >= this.cfg.repairTarget && this.cfg.abandonIfTaskFullyRepaired) {
         this.release(m);
       } else if (m.interrupted) {
         // Already answered one emergency; see it through.
@@ -666,6 +729,11 @@ export class Sim {
     this.totals.freshnessAgeDenominator += denom * dt;
   }
 }
+
+/** Confidence bands for the reliability diagram. */
+const RELIABILITY_BANDS = 5;
+/** The band boundary above which the player is entitled to feel safe. */
+const CONFIDENT = 0.8;
 
 /** How far outside the outermost course a raider comes to rest. */
 const FACE_OFFSET = 15;

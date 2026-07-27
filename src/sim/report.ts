@@ -71,6 +71,16 @@ export interface ReportCard {
     repairs: number;
   }>;
 
+  /**
+   * Was the board telling the truth? For each band of displayed confidence, the
+   * share of raiders that band actually turned away. A well-calibrated kingdom
+   * has held-rate ≈ band centre; anything far below means the wall was flattering
+   * you. Empty on levels where damage is directly visible.
+   */
+  reliability: Array<{ shown: number; held: number; n: number }>;
+  /** Raiders that came through a wall the player was reading as safe. */
+  confidentlyWrong: number;
+
   roast: string;
   teaches: string;
 }
@@ -146,6 +156,15 @@ export function buildReport(sim: Sim): ReportCard {
         repairs: t.repairsByBrick[b.id] ?? 0,
       })),
 
+    reliability: t.reliabilityTotal
+      .map((n, i) => ({
+        shown: (i + 0.5) / t.reliabilityTotal.length,
+        held: n > 0 ? t.reliabilityHeld[i] / n : 0,
+        n,
+      }))
+      .filter((b) => b.n > 0),
+    confidentlyWrong: t.confidentlyWrong,
+
     roast: '',
     teaches: sim.level.teaches,
   };
@@ -171,6 +190,9 @@ function roast(sim: Sim, c: ReportCard): string {
   const hubsExist = sim.world.bricks.some((b) => b.hub);
 
   if (c.outcome === 'fallen') {
+    if (c.confidentlyWrong >= 3) {
+      return `${c.confidentlyWrong} raiders walked through walls you were reading as safe. You were not sure of them; you had merely been there recently.`;
+    }
     if (c.wastedAttention > 0.2) {
       return `Your masons lovingly restored ${c.cosmeticRepairs} cosmetic cracks while ${worstName} fell.`;
     }

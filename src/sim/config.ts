@@ -200,6 +200,69 @@ export function passProbability(integrity: number): number {
  * per-brick importance calculation — if these two ever disagreed, the game would
  * be scoring players against a demand model it does not actually run.
  */
+/**
+ * P(Gamma(n,1) > x) — the upper tail used by holdProbability.
+ */
+function gammaUpper(n: number, x: number): number {
+  let term = Math.exp(-x);
+  let sum = term;
+  for (let j = 1; j < n; j++) {
+    term *= x / j;
+    sum += term;
+  }
+  return sum;
+}
+
+const HOLD_TABLE_MAX = 14;
+const HOLD_TABLE_N = 700;
+const HOLD_TABLE: number[] = [];
+
+/**
+ * Probability a brick still turns a raider away, given `mu = λ · age` expected
+ * change events since it was last seen.
+ *
+ * Under the uncertain model a brick's true adequacy is a compound Poisson
+ * product — it sits unchanged and then jumps down by a Uniform[0,1) factor. This
+ * returns 1 − E[passProbability(adequacy)], i.e. the chance it holds.
+ *
+ * It is deliberately NOT the mean adequacy. passProbability is convex, so a
+ * mean-adequacy bar would read "no risk at all" across its entire green range
+ * while real risk climbed past a third — a lie that never resolves. Displaying
+ * the hold probability keeps `1 − bar` as accumulated uncertainty AND states it
+ * in the game's own units. It also composes: the sim multiplies pass
+ * probabilities across a target set, and E[∏p] = ∏E[p] under independence.
+ */
+export function holdProbability(mu: number): number {
+  if (!(mu > 0)) return 1;
+  if (mu >= HOLD_TABLE_MAX) return holdExact(mu);
+  if (HOLD_TABLE.length === 0) {
+    for (let i = 0; i <= HOLD_TABLE_N; i++) {
+      HOLD_TABLE.push(holdExact((i * HOLD_TABLE_MAX) / HOLD_TABLE_N));
+    }
+  }
+  const pos = (mu / HOLD_TABLE_MAX) * HOLD_TABLE_N;
+  const i = Math.floor(pos);
+  const f = pos - i;
+  return HOLD_TABLE[i] * (1 - f) + HOLD_TABLE[Math.min(i + 1, HOLD_TABLE_N)] * f;
+}
+
+function holdExact(mu: number): number {
+  // The series truncates at 200 terms, so beyond that the dropped Poisson mass
+  // makes the result collapse toward 1 — i.e. a brick nobody has visited in ages
+  // would read as certain to hold. Hold is already 1.4e-4 by mu = 20.
+  if (mu > 40) return 0;
+  const c = DAMAGE_THRESHOLDS.weathered;
+  const y = -Math.log(c);
+  let pois = Math.exp(-mu);
+  let pass = 0;
+  for (let n = 1; n <= 200; n++) {
+    pois *= mu / n;
+    pass += pois * (gammaUpper(n, y) - (1 / c) * Math.pow(2, -n) * gammaUpper(n, 2 * y));
+    if (n > mu && pois < 1e-14) break;
+  }
+  return Math.min(1, Math.max(0, 1 - pass));
+}
+
 export function courseIndexForBand(band: 'top' | 'mid' | 'deep', courses: number): number {
   if (courses <= 1) return 0;
   if (band === 'top') return 0;

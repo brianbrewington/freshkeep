@@ -4,6 +4,9 @@ import type { Brick, Mason } from '../src/sim/types.js';
 import type { EvalCtx } from '../src/sim/policy/ir.js';
 
 function brick(over: Partial<Brick> = {}): Brick {
+  // On a `linear` level belief and truth are the same number. Tests that set one
+  // mean both, so mirror it unless a test deliberately pulls them apart.
+  if (over.integrity !== undefined && over.belief === undefined) over = { ...over, belief: over.integrity };
   return {
     id: 1,
     wallIds: ['N'],
@@ -22,6 +25,11 @@ function brick(over: Partial<Brick> = {}): Brick {
     demandWeight: 3,
     arrivalRate: 0.01,
     integrity: 1,
+    belief: 1,
+    lastSeen: 0,
+    changeTimes: [],
+    changeFactors: [],
+    changeIndex: 0,
     decayRate: 0.01,
     claimedBy: null,
     zone: null,
@@ -35,6 +43,7 @@ function ctx(b: Partial<Brick>, distance = 10, band: 'top' | 'mid' | 'deep' = 't
     mason: { id: 0, x: 0, y: 0 } as Mason,
     distance,
     band,
+    now: 0,
     cfg: DEFAULT_CONFIG,
   };
 }

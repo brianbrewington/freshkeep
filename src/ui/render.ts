@@ -110,7 +110,7 @@ export class Renderer {
       for (const b of w.bricks) {
         maxBid = Math.max(
           maxBid,
-          sim.policy.bid({ brick: b, mason: w.masons[0], distance: 0, band: sim.bandOf(b), cfg: sim.cfg }),
+          sim.policy.bid({ brick: b, mason: w.masons[0], distance: 0, band: sim.bandOf(b), now: w.t, cfg: sim.cfg }),
         );
       }
     }
@@ -226,7 +226,9 @@ export class Renderer {
     const w = sim.world;
     const kx = this.sx(w.king.x);
     const ky = this.sy(w.king.y);
-    const state = damageState(b.integrity);
+    // BELIEF, never truth. Drawing the hidden adequacy would hand the player
+    // exactly the thing the uncertain model exists to withhold.
+    const state = damageState(b.belief);
 
     const wall = w.wallsById[b.wallIds[0]];
     const roomy = !b.keep && wall && wall.courses === 1;
@@ -251,7 +253,7 @@ export class Renderer {
       if (b.keep && state === 'intact') ctx.fillStyle = PALETTE.keep;
       // Integrity fills outward from the kingward edge: a half-gone brick is
       // visibly half a wall, with the gap on the side the raiders come from.
-      this.arcPath(kx, ky, rIn, rIn + (rOut - rIn) * b.integrity, a0, a1);
+      this.arcPath(kx, ky, rIn, rIn + (rOut - rIn) * b.belief, a0, a1);
       ctx.fill();
     } else {
       ctx.fillStyle = PALETTE.rubble;
@@ -271,7 +273,7 @@ export class Renderer {
     if (state === 'cracked') {
       ctx.strokeStyle = 'rgba(20,12,8,0.8)';
       ctx.lineWidth = Math.max(0.9, 1.2 * this.scale);
-      const n = 2 + Math.floor((1 - b.integrity / 0.33) * 2);
+      const n = 2 + Math.floor((1 - b.belief / 0.33) * 2);
       ctx.beginPath();
       for (let i = 0; i < n; i++) {
         const a = a0 + (a1 - a0) * (0.2 + 0.6 * noise(b.id, i));
@@ -338,6 +340,7 @@ export class Renderer {
         mason: w.masons[0],
         distance: 0,
         band: sim.bandOf(b),
+        now: w.t,
         cfg: sim.cfg,
       });
       this.arcPath(kx, ky, rIn, rOut, a0, a1);

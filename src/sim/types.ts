@@ -54,8 +54,25 @@ export interface Brick {
   arrivalRate: number;
   /** Zone label in zone mode. Masons never cross zone boundaries. */
   zone: string | null;
-  /** [0, 1]. */
+  /**
+   * TRUTH: how well this brick still answers. Under `linear` it drains steadily.
+   * Under `uncertain` it sits unchanged and then jumps down at Poisson times, so
+   * it is hidden from the player — raiders resolve against it, nothing else does.
+   */
   integrity: number;
+  /**
+   * BELIEF: what the player, the renderer and every policy actually see. Under
+   * `linear` this is just the integrity. Under `uncertain` it is the probability
+   * the brick still turns a raider away, given how long since anyone looked —
+   * so `1 − belief` is accumulated uncertainty, in the game's own units.
+   */
+  belief: number;
+  /** Sim time a mason last finished work here. Age is measured from this. */
+  lastSeen: number;
+  /** Pre-generated change times and magnitudes; policy-independent by construction. */
+  changeTimes: number[];
+  changeFactors: number[];
+  changeIndex: number;
   /** Integrity lost per second. Drawn per-brick from a log-normal-ish distribution. */
   decayRate: number;
   /** Mason id currently committed to this brick, or null. */
@@ -138,6 +155,7 @@ export interface Mason {
   taskWasCosmetic: boolean;
   /** Integrity the current brick had when work started, and seconds worked so far. */
   repairFrom: number;
+  beliefFrom: number;
   repairElapsed: number;
   /** Accumulated seconds, for the utilization breakdown. */
   timeIdle: number;

@@ -180,7 +180,7 @@ describe('the DSL means what it says', () => {
     const wall = sim.world.wallsById['N'];
     const keystone = sim.world.bricks[wall.grid[0][0]];
     const sliver = sim.world.bricks[wall.grid[0][1]];
-    const ctx = (b: typeof keystone) => ({ brick: b, mason: sim.world.masons[0], distance: 1, band: sim.bandOf(b), cfg: sim.cfg });
+    const ctx = (b: typeof keystone) => ({ brick: b, mason: sim.world.masons[0], distance: 1, band: sim.bandOf(b), now: 0, cfg: sim.cfg });
     expect(p.evaluate(ctx(keystone)), 'the 92% arc should be high-traffic').toBeTruthy();
     expect(p.evaluate(ctx(sliver)), 'a 1.6% arc should not be high-traffic').toBeNull();
     // ...and the two signals genuinely disagree, which is the whole point.
@@ -198,10 +198,11 @@ describe('the DSL means what it says', () => {
     const sim = new Sim({ level: getLevel('cornerstones'), seed: 1, policy: presetPolicy('balanced') });
     const b = sim.world.bricks[0];
     const ctx = (integrity: number) => ({
-      brick: { ...b, integrity },
+      brick: { ...b, integrity, belief: integrity },
       mason: sim.world.masons[0],
       distance: 1,
       band: sim.bandOf(b),
+      now: 0,
       cfg: sim.cfg,
     });
     expect(p.evaluate(ctx(sim.cfg.dt * 0))).toBeTruthy();

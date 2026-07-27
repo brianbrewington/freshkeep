@@ -85,6 +85,19 @@ DEFAULT:    none
 `,
   },
   {
+    id: 'b7-answer',
+    name: 'KEEP WALKING',
+    level: 'b7-no-alarm',
+    insight:
+      'Nothing here will ever look like an emergency, so stop waiting for one. Go round, and go round the SHORT way — every second walking is a second of confidence draining behind you. Worth noticing: NEAREST FIRST does about as well, because it is also a sweep. A pathology elsewhere is the right instinct here.',
+    source: `# KEEP WALKING
+# No thresholds, because there is nothing to threshold on. A short round, taken
+# in the cheapest order, holds confidence high everywhere at once.
+PRIORITY 1: bricks WHERE integrity < 0.95 BY nearest
+DEFAULT:    none
+`,
+  },
+  {
     id: 'the-line',
     name: 'THE LINE',
     level: 'cornerstones',

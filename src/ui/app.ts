@@ -245,7 +245,7 @@ function wallFreshness(sim: Sim, wallId: string): number {
   for (const b of sim.world.bricks) {
     if (!b.wallIds.includes(wallId)) continue;
     const w = Math.max(0.001, b.demandWeight) * sim.cfg.rankValue[sim.bandOf(b)];
-    num += w * b.integrity;
+    num += w * b.belief;
     den += w;
   }
   return den > 0 ? num / den : 1;
@@ -347,6 +347,7 @@ function renderCard(c: ReportCard, sim: Sim): void {
         <div class="seg" style="width:${wasted * 100}%;background:#d05a4a" title="repairing weathered — wasted">${wasted > 0.08 ? `wasted ${pct(wasted)}` : ''}</div>
       </div>
     </div>
+    ${reliabilityPanel(c)}
     ${allocationScatter(c)}
     <p class="teaches"><b>This level teaches:</b> ${c.teaches}</p>
     <div class="actions">
@@ -365,6 +366,38 @@ function renderCard(c: ReportCard, sim: Sim): void {
 
 function wallName(sim: Sim, id: string): string {
   return sim.world.wallsById[id]?.name ?? id;
+}
+
+/**
+ * Was the board telling the truth? Only meaningful where the player was seeing
+ * confidence rather than damage, so it is omitted on levels you can see exactly.
+ * Built purely from what was displayed and what then happened.
+ */
+function reliabilityPanel(c: ReportCard): string {
+  const bands = c.reliability.filter((b) => b.n >= 5);
+  if (bands.length < 2) return '';
+  const rows = bands
+    .map((b) => {
+      const shown = Math.round(b.shown * 100);
+      const held = Math.round(b.held * 100);
+      const lying = b.held < b.shown - 0.12;
+      return `<div class="rel-row">
+        <span class="rel-k">read ${shown}%</span>
+        <div class="rel-track"><div class="rel-fill${lying ? ' lying' : ''}" style="width:${held}%"></div></div>
+        <span class="rel-v${lying ? ' lying' : ''}">held ${held}%</span>
+        <span class="rel-n">n=${b.n}</span>
+      </div>`;
+    })
+    .join('');
+  return `<div class="bars">
+    <div class="cap">Was the wall telling you the truth?</div>
+    ${rows}
+    <p class="note">${
+      c.confidentlyWrong > 0
+        ? `${c.confidentlyWrong} raider${c.confidentlyWrong === 1 ? '' : 's'} came through a wall you were reading as safe.`
+        : 'Nothing came through a wall you were confident about.'
+    } When these two columns disagree, the bar was flattering you.</p>
+  </div>`;
 }
 
 function metric(label: string, value: string, note: string): string {

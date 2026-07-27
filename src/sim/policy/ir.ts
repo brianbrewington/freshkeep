@@ -13,6 +13,8 @@ export interface EvalCtx {
   /** Straight-line distance, world units. Travel time is actionability, so it is always in scope. */
   distance: number;
   band: CourseBand;
+  /** Sim time, so rules can reason about how long since a brick was seen. */
+  now: number;
   cfg: Config;
 }
 
@@ -46,13 +48,13 @@ export const ORDERINGS: Record<string, Ordering> = {
   farthest: (c) => c.distance,
   largest: (c) => c.brick.throughput,
   smallest: (c) => -c.brick.throughput,
-  'most damaged': (c) => 1 - c.brick.integrity,
-  'least damaged': (c) => c.brick.integrity,
+  'most damaged': (c) => 1 - c.brick.belief,
+  'least damaged': (c) => c.brick.belief,
   fastest: (c) => c.brick.decayRate,
   slowest: (c) => -c.brick.decayRate,
   'highest throughput': (c) => c.brick.throughput,
   'most valuable': (c) =>
-    c.brick.throughput * (1 - c.brick.integrity) * c.cfg.rankValue[c.band],
+    c.brick.throughput * (1 - c.brick.belief) * c.cfg.rankValue[c.band],
 };
 
 export const ORDERING_NAMES = Object.keys(ORDERINGS);
