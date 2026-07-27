@@ -1,3 +1,17 @@
+/**
+ * FRESHKEEP — what do you look at when there is more than you can watch?
+ *
+ * A deterministic simulation of finite attention against sources that go stale on
+ * their own schedule. Walls are query result sets, bricks are pages, a brick's
+ * arc around the ring is its share of the traffic, and raiders are queries
+ * arriving from a distribution the player never sees. The player writes a policy;
+ * masons execute it.
+ *
+ * The core is headless and free of any rendering concern, so the same code runs
+ * the game, the CLI and the balance tooling. Determinism is load-bearing:
+ * identical (level, seed, policy, masonCount) reproduces an identical event log,
+ * which is what lets the thesis button compare two runs and mean it.
+ */
 export * from './types.js';
 export * from './config.js';
 export * from './rng.js';

@@ -38,9 +38,9 @@ export interface RunningTotals {
 }
 
 /**
- * The deterministic simulation core. Fully decoupled from rendering:
- * nothing in here touches the DOM, and every random draw comes from `rng`
- * in a fixed order.
+ * The deterministic simulation core. Fully decoupled from rendering — nothing in
+ * here touches the DOM — and every random draw comes from one of two fixed
+ * streams in a fixed order, so identical inputs replay identically forever.
  */
 export class Sim {
   readonly cfg: Config;

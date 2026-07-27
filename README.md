@@ -1,22 +1,60 @@
 # FRESHKEEP
 
-*A game where you program masons to defend a kingdom of freshness.*
+### What do you look at, when there is more than you can watch?
 
-Walls are query result sets. Bricks are web pages, each decaying at its own rate.
-Raiders are queries. You do not click to repair — you write a policy, and masons
-execute it autonomously. Then you watch your policy win, or lose.
+Every monitoring problem has the same shape. Things go out of date on their own
+schedule, and never on yours. Some of them matter enormously and most of them
+hardly matter at all. You have finite attention, you do not find out whether
+something was wrong until you go and look — and looking costs the same whether
+you find a fire or find nothing.
 
-**Status: M1 + M2 complete, on a radial board.** The deterministic simulation core, the rulebook
-DSL, auction mode, six levels, telemetry and the headless CLI (M1); and the
-canvas renderer, live rulebook editor, controls, report card and thesis button
-(M2). Everything is tested.
+A search engine choosing which pages to re-crawl before they rot. An on-call
+engineer deciding which dashboards earn a glance at 3am. A port that can open one
+container in a thousand. A radiologist setting re-screening intervals. A team
+picking which tests to run before a release. A newsroom deciding which sources to
+keep checking. Same question every time, and the answer is never *watch
+everything*, because there was never enough of you to go around.
+
+The uncomfortable part is that when you have plenty of capacity, every strategy
+looks fine. Slack hides bad judgement. You only discover whether you were
+allocating attention well when there stops being enough of it — which is exactly
+when you can least afford to find out.
+
+## The game
+
+*You program masons to defend a kingdom of freshness.*
+
+Walls are query result sets. Bricks are pages, each going stale at its own rate,
+and a brick's width around the ring is its share of the traffic. Raiders are
+queries, arriving from a demand distribution you never get to see. If the brick a
+raider arrives at is holding, it leaves empty-handed. If it has crumbled, the
+raider walks through and goes for the king.
+
+**You never click a brick.** You write a policy — a small readable rulebook — and
+the masons execute it autonomously while you watch. Then you press a button that
+runs the identical siege again with half the crew, and find out whether your
+policy was good or whether you were merely well staffed.
+
+That button is the argument. Everything else is scaffolding for it.
+
+The underlying model is not invented for the game: it comes from Brian
+Brewington's dissertation, *Keeping Up With the Changing Web* (Dartmouth), on how
+often to revisit sources that change at rates you can only estimate. The
+counterintuitive results the levels teach — that the fastest-changing sources can
+be the ones worth abandoning, that a good allocation beats a naive one by more
+and more as capacity shrinks — are results from that work, made playable.
+
+**Status: M1 + M2 complete, on a radial board.** Deterministic simulation core,
+rulebook DSL, auction mode, six teaching levels and six campaign levels,
+telemetry, headless CLI, canvas renderer, live editor, report card and thesis
+button. 68 tests.
 
 ## Running it
 
 ```bash
 npm install
 npm run dev        # the game, at http://localhost:5173
-npm test                                    # 32 tests, incl. every acceptance criterion
+npm test           # 68 tests, incl. every acceptance criterion
 npm run sim -- --help
 
 npm run sim -- --level 3 --preset balanced             # a report card
@@ -25,6 +63,11 @@ npm run sim -- --level 3 --sweep                       # every preset, side by s
 npm run sim -- --level seam --preset balanced --zones  # then --no-zones, and compare
 npm run sim -- --level 6 --solution hold-the-keep
 npm run sim -- --level 2 --policy ./my.rulebook --json --out run.json
+npm run sim -- --level 3 --preset balanced --pressure 2   # twice the raiders
+
+npx tsx tools/balance.ts matrix                   # every policy x every level
+npx tsx tools/balance.ts knee cornerstones balanced decayMedian 0.02,0.05,6
+npx tsx tools/scatter.ts cornerstones balanced 16,8,4   # standalone HTML
 ```
 
 ## The thesis button
@@ -74,6 +117,40 @@ the wide impressive ones catch almost nothing.
 This replaced an earlier `demandExponent` knob (traffic ∝ throughput^k), which
 was rejected because a heavier tail on *size* makes size-greed correct and turns
 BIGGEST FIRST — the bubble-game fallacy — into the strongest policy in the game.
+
+## Pressure
+
+Mason count is the supply side of the game's central ratio. `--pressure` (and the
+slider beside Masons) is the demand side — it scales how fast raiders arrive.
+Both move the same ratio, which is the thing the game is actually about. The
+thesis and Seam comparisons inherit it, so those stay controlled experiments.
+
+## The two axes, and the ignored set
+
+Two numbers decide whether a brick is worth walking to: **how fast it turns
+over**, and **how much traffic it answers**. Both are computed per brick.
+`decayRate` is the first. The second, `arrivalRate`, is the wall's share of
+demand times the rank weights times the bearing density integrated over that
+brick's own arc — so it accounts for peaked demand instead of assuming traffic
+follows arc width. It is verified to sum to the level's demand rate and to
+predict the arrivals each brick actually receives.
+
+Together they place every brick on a plane, and the report card plots where your
+masonry actually went on it: mean change time across, mean time between arrivals
+up, filled circles where masons spent time, hollow rings for bricks left alone.
+
+The shape to look for is the **ignored set**, and it grows as the crew shrinks:
+
+```
+$ npx tsx tools/scatter.ts cornerstones balanced 16,8,4
+  16 masons    15/144 bricks ignored, carrying 17% of the traffic
+   8 masons    65/144 ignored, carrying 37%
+   4 masons   101/144 ignored, carrying 72%
+```
+
+That is the whole thesis in three lines. With plenty of masons almost everything
+gets attention and any policy looks defensible; as capacity falls you are forced
+to choose, and *which* things you abandon is the only thing that matters.
 
 ## The basics — six one-mason kingdoms
 
@@ -137,11 +214,21 @@ INTERRUPT WHEN any brick integrity < 0.15 AND distance < 30
 IGNORE weathered
 ```
 
-Fields: `integrity` `damage` `decayRate` `throughput` `distance` `course` `size` `wall`,
-and the yes/no properties `hub` `spare` `keep` `intact` `weathered` `cracked` `rubble`
-`damaged` `structural` `top` `mid` `deep`. `AND` / `OR` / `NOT` / parentheses.
-`BY` orders within a tier: `nearest` `largest` `most damaged` `fastest`
-`most valuable` and friends. Distance is always the final tiebreak.
+Fields: `integrity` `damage` `decayRate` `traffic` (a.k.a. `arc`) `throughput`
+`distance` `course` `size` `wall`, and the yes/no properties `hub` `spare` `keep`
+`intact` `weathered` `cracked` `rubble` `damaged` `structural` `top` `mid` `deep`.
+`AND` / `OR` / `NOT` / parentheses. `BY` orders within a tier: `nearest`
+`largest` `most damaged` `fastest` `most valuable` and friends. Distance is
+always the final tiebreak.
+
+Two of those are easy to confuse, deliberately: **`throughput` is the size class**
+(S/M/L = 1/3/9) and **`traffic` is the brick's angular share** — how much of the
+ring it actually covers. On most levels they agree. On The Bubble Trap they do
+not, and the gap is the lesson. `traffic` used to alias `throughput`, which meant
+a field named for traffic returned size — exactly the fallacy the game is about.
+
+`wall` accepts only `=` and `!=`; walls have no ordering, so `wall > E` is a parse
+error rather than something that quietly compiles to `wall = E`.
 
 Rulebooks, zone assignments and auction weights all compile to the same internal
 representation: a scoring function over (mason, brick) pairs plus interrupt rules.
@@ -150,13 +237,15 @@ representation: a scoring function over (mason, brick) pairs plus interrupt rule
 
 ```
 src/sim/
-  rng.ts          seeded PRNG; two independent streams (see below)
+  rng.ts          seeded PRNG; separate demand and resolution streams
   types.ts        Brick / Wall / Raider / Mason / King / World
   config.ts       every constant, all defaults, none of them laws
-  level.ts        LevelSpec + world construction (ring geometry, hubs, keep)
-  levels.ts       the six shipped levels + sandbox
+  level.ts        polar world construction: sectors, arcs, hubs, demand lobes,
+                  and per-brick importance
+  levels.ts       the six campaign levels + sandbox
+  basics.ts       the six one-mason teaching levels
   sim.ts          the deterministic tick loop
-  report.ts       report card, utilization, roast lines
+  report.ts       report card, utilization, allocation, roast lines
   telemetry.ts    versioned JSON export + localStorage
   policy/
     ir.ts         the shared internal representation
@@ -164,13 +253,18 @@ src/sim/
     presets.ts    the five pathology presets
     solutions.ts  worked solutions, one per level that needs a written policy
     auction.ts    Mode 3 bid weights
-  basics.ts       the six one-mason teaching levels
+src/ui/
+  render.ts       annulus-sector renderer
+  scatter.ts      allocation plot — pure, so it is testable without a browser
+  app.ts          shell, editor, controls, report card
 src/cli/run.ts    headless runner
-tools/balance.ts  policy x level x crew x seed sweeps, and knee-finding
-test/             determinism, DSL, acceptance, basics
+tools/
+  balance.ts      policy x level x crew x seed sweeps, and knee-finding
+  scatter.ts      renders the allocation sweep to standalone HTML
+test/             determinism, DSL, acceptance, basics, geometry, scatter
 ```
 
-## Acceptance criteria — all asserted in `test/acceptance.test.ts`
+## Acceptance criteria — all asserted in tests
 
 | Criterion | Where |
 |---|---|
@@ -356,9 +450,32 @@ No optimal routing or TSP solving — greedy plus hysteresis, full stop. No
 fog-of-war. No multiplayer, accounts or backend. No raider HP or combat. No
 natural-language policy execution without a visible DSL compilation step.
 
-## Next: M3+
+## Next
 
-Zone *painting* (zones are currently one crew per wall, which is enough to show
-the pathology but is not the painting UI the spec describes), the auction
+**The interview.** Before the siege the board is hidden and you may ask a limited
+number of questions about it, each costing prep. Then you commit a rulebook and
+cannot edit it while the siege runs. The skill is knowing which uncertainty would
+actually change your policy — most people ask what the biggest brick is; the
+question that pays is usually about variance.
+
+**Accumulated uncertainty.** Decay is currently linear and therefore exactly
+predictable, which makes the optimal policy a fixed rotation you can time with a
+stopwatch. Real sources change memorylessly. The bar should decay as
+`e^(−λ·age)` — the probability the brick still holds — so what drains is not the
+wall but your *confidence* in it, and the mason cannot know what he'll find until
+he arrives.
+
+**The frontier level and the optimal boundary.** With both axes computed, the
+next level is bricks scattered across the (change rate, traffic) plane where the
+job is to find the line. Scoring it properly needs the allocation rule from the
+dissertation rather than a reconstruction of it.
+
+**A regime schedule.** Demand that shifts on a fixed, seeded schedule — the world
+changes and a hardcoded policy doesn't. Deliberately *not* an adversary that
+reacts to you: that would make every A/B a different world and take the thesis
+button with it.
+
+**Smaller:** zone *painting* (zones are currently one crew per wall — enough to
+show the pathology, not the painting UI the spec describes), the auction
 bid-equalisation overlay, apprenticeship mode, and the natural-language layer
 that compiles to visible DSL before it runs.

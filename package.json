@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "A game where you program masons to defend a kingdom of freshness.",
+  "description": "What do you look at when there is more than you can watch? A game about allocating finite attention across sources that go stale on their own schedule.",
   "scripts": {
     "sim": "tsx src/cli/run.ts",
     "test": "vitest run",

@@ -1,7 +1,12 @@
 #!/usr/bin/env tsx
 /**
- * Headless runner: JSON/DSL policy in, report card out.
- * This alone is scientifically useful — it is the experiment platform.
+ * Headless runner: policy in, report card out.
+ *
+ * FRESHKEEP asks what you look at when there is more than you can watch — the
+ * shape shared by crawler scheduling, on-call monitoring, inspection regimes and
+ * every other finite-attention problem. This runner is where that question gets
+ * answered with numbers instead of impressions: same seed, same siege, vary one
+ * thing, read the report card.
  *
  *   npm run sim -- --level 3 --preset balanced --masons 16 --seed 7
  *   npm run sim -- --level seam --preset balanced --no-zones
@@ -25,6 +30,7 @@ import {
   thesisCompare,
   serializeEvents,
   LEVELS,
+  BASICS,
   DEFAULT_WEIGHTS,
   type Policy,
 } from '../sim/index.js';
@@ -48,9 +54,10 @@ function parseArgs(argv: string[]): Record<string, string | boolean> {
 const args = parseArgs(process.argv.slice(2));
 
 if (args.help) {
-  console.log(`FRESHKEEP headless sim
+  console.log(`FRESHKEEP — what do you look at when there is more than you can watch?
 
-  --level <id|1-6>     level to run (default 1). ${LEVELS.map((l, i) => `${i + 1}=${l.id}`).join(' ')}
+  --level <id|1-6>     campaign, by number or id: ${LEVELS.map((l, i) => `${i + 1}=${l.id}`).join(' ')}
+                       the basics, by id: ${BASICS.map((l) => l.id).join(' ')}
   --preset <id>        ${PRESETS.map((p) => p.id).join(' | ')}
   --solution <id>      worked solutions: ${SOLUTIONS.map((s) => s.id).join(' | ')}
   --policy <file>      a .rulebook file (DSL) or .json of auction weights
