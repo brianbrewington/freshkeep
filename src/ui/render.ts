@@ -1,5 +1,5 @@
 import type { Brick, Mason, Raider, World } from '../sim/types.js';
-import { damageState } from '../sim/config.js';
+import { DAMAGE_THRESHOLDS, damageState } from '../sim/config.js';
 import { COURSE_GAP } from '../sim/level.js';
 import type { Sim } from '../sim/sim.js';
 
@@ -47,6 +47,13 @@ export interface RenderOptions {
   showTasks?: boolean;
   /** Halo outside the wall showing where raiders actually arrive from. */
   showDemand?: boolean;
+  /**
+   * Reveal the hidden truth beside the belief. The player is the policy author,
+   * not the operator: someone designing a revisit schedule gets ground truth
+   * afterwards, their crawler never does. Watching a brick crumble silently while
+   * a mason walks past it is the whole mechanic, and it is invisible otherwise.
+   */
+  showTruth?: boolean;
 }
 
 /**
@@ -317,6 +324,30 @@ export class Renderer {
       ctx.lineTo(kx + Math.cos(b.angle) * rIn, ky + Math.sin(b.angle) * rIn);
       ctx.closePath();
       ctx.stroke();
+    }
+
+    // Truth, for the omniscient viewer. A tick where the adequacy really sits,
+    // and a hard marker when the brick is ALREADY passable while still reading
+    // sound — the silent crumble the player would otherwise never see.
+    if (opts.showTruth && sim.level.decayModel === 'uncertain') {
+      const gap = b.belief - b.integrity;
+      if (gap > 0.03) {
+        const rt = rIn + (rOut - rIn) * b.integrity;
+        ctx.strokeStyle = 'rgba(150,220,235,0.85)';
+        ctx.lineWidth = Math.max(1, 1.4 * this.scale);
+        ctx.beginPath();
+        ctx.arc(kx, ky, rt, a0, a1);
+        ctx.stroke();
+      }
+      if (b.integrity < DAMAGE_THRESHOLDS.weathered && b.belief >= DAMAGE_THRESHOLDS.weathered) {
+        ctx.fillStyle = 'rgba(255,107,94,0.30)';
+        this.arcPath(kx, ky, rIn, rOut, a0, a1);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255,107,94,0.95)';
+        ctx.lineWidth = Math.max(1.2, 1.8 * this.scale);
+        this.arcPath(kx, ky, rIn, rOut, a0, a1);
+        ctx.stroke();
+      }
     }
 
     // Drain rate: pips just outside the brick, bucketed by the same slow/medium/

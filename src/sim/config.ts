@@ -52,6 +52,12 @@ export interface Config {
    */
   minRepairBenefit: number;
   /**
+   * The `uncertain` counterpart of `minRepairBenefit`. There, the worth of a
+   * visit rises with age rather than with visible damage, so the only thing worth
+   * forbidding is re-walking to a brick a mason has just left.
+   */
+  minRevisitSeconds: number;
+  /**
    * Hysteresis: once committed, a mason finishes the task unless an interrupt rule fires.
    * If true, it may also re-evaluate when the task becomes pointless (someone else fixed it).
    */
@@ -150,6 +156,7 @@ export const DEFAULT_CONFIG: Config = {
   masonSecondsPerRepair: 3.0,
   repairTarget: 1.0,
   minRepairBenefit: 0.08,
+  minRevisitSeconds: 2,
   abandonIfTaskFullyRepaired: true,
   oneMasonPerBrick: true,
   arriveEpsilon: 3,

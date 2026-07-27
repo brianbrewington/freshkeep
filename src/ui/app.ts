@@ -49,6 +49,7 @@ const ui = {
   showTasks: $<HTMLInputElement>('show-tasks'),
   showBids: $<HTMLInputElement>('show-bids'),
   showDemand: $<HTMLInputElement>('show-demand'),
+  showTruth: $<HTMLInputElement>('show-truth'),
   bidsWrap: $<HTMLLabelElement>('bids-wrap'),
   levelName: $<HTMLSpanElement>('level-name'),
   clock: $<HTMLSpanElement>('clock'),
@@ -290,6 +291,7 @@ function draw(): void {
     showTasks: ui.showTasks.checked,
     showBids: ui.showBids.checked,
     showDemand: ui.showDemand.checked,
+    showTruth: ui.showTruth.checked,
   });
 
   const k = sim.world.king;
@@ -513,7 +515,7 @@ ui.preset.addEventListener('change', () => {
   start();
 });
 ui.editor.addEventListener('input', () => currentPolicy());
-for (const el of [ui.showTasks, ui.showBids, ui.showDemand]) {
+for (const el of [ui.showTasks, ui.showBids, ui.showDemand, ui.showTruth]) {
   el.addEventListener('change', draw);
 }
 ui.masonsRange.addEventListener('input', () => {

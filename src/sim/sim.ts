@@ -534,9 +534,15 @@ export class Sim {
 
   /** Is there enough integrity missing to justify a task at all? */
   private worthRepairing(b: Brick): boolean {
-    // Belief, not truth. Under `uncertain` a large mass of bricks sit at exactly
-    // full truth, and gating on that would make them permanently undispatchable —
-    // you could never go and look at the thing you are unsure about.
+    if (this.level.decayModel === 'uncertain') {
+      // A revisit is worth traffic x P(already stale), which grows with AGE — not
+      // with the gap you would close. Under memoryless change a brick that still
+      // reads nearly full is worth rechecking, because it may have crumbled a
+      // second ago and nothing would tell you. Gating on the displayed gap (as
+      // the linear model does) would make a freshly-visited brick untouchable for
+      // its first half-minute regardless of what a revisit was worth.
+      return this.world.t - b.lastSeen >= this.cfg.minRevisitSeconds;
+    }
     return this.cfg.repairTarget - b.belief >= this.cfg.minRepairBenefit;
   }
 
