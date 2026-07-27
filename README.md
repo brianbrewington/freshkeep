@@ -184,6 +184,34 @@ hidden quantity, not of the thing that matters.
 `b7-no-alarm` teaches it. Everything else stays `linear`, so no existing level's
 balance moved.
 
+### Converting the campaign — measured, not yet done
+
+The campaign is stochastic in principle and should probably move. It was
+converted and measured, and the result is recorded here rather than shipped,
+because several of the remaining failures are design decisions rather than
+tuning.
+
+The scale factor is **~1.7×**, not the 3.15× that time-to-cracked equivalence
+implies. That equivalence only counts the moment a brick crosses the line; under
+uncertainty you also leak *continuously* at high confidence, so 3.15× makes four
+of six levels unwinnable by anything.
+
+At 1.7× most of the campaign lands well — presets fail where they should, the
+worked solutions hold, and The Culling finally rewards triage above every preset
+(8/8 against BALANCED's 6/8) once HOLD THE KEEP stops being a *waiting* policy.
+That last part is the general lesson: **uncertainty kills the "when" question.**
+Every good policy becomes a sweep; all that remains is choosing what to sweep.
+
+What still blocks it:
+
+- the Cornerstones knee moves and needs re-finding
+- BALANCED stops losing anything, so no preset demonstrates a pathology
+- the Seam's pooled-vs-zoned dominance breaks on one seed
+- **the wasted-attention criterion has no meaning under uncertainty.** The
+  cosmetic metric is deliberately suppressed there — the damage taxonomy does not
+  transfer to a probability — so a criterion from the original spec needs
+  re-homing to a level you can see exactly, rather than quietly relaxing.
+
 ## The basics — seven one-mason kingdoms
 
 Levels small enough to read at a glance. One mason, one ring, one idea; no hubs,
@@ -253,7 +281,13 @@ Fields: `integrity` `damage` `age` `decayRate` `traffic` (a.k.a. `arc`) `through
 `distance` `course` `size` `wall`, and the yes/no properties `hub` `spare` `keep`
 `intact` `weathered` `cracked` `rubble` `damaged` `structural` `top` `mid` `deep`.
 `AND` / `OR` / `NOT` / parentheses. `BY` orders within a tier: `nearest`
-`largest` `most damaged` `fastest` `most valuable` and friends. Distance is
+`largest` `most damaged` `fastest` `oldest` `most valuable` and friends.
+
+**`BY oldest` is round-robin**, and it is the ordering the theory asks for. Under
+memoryless change the optimal policy is to bin bricks — by change rate, and by
+popularity once that matters — and round-robin within each bin at a rate set for
+that bin. PRIORITY tiers *are* the bins; `BY oldest` is the round-robin inside
+one. `BY nearest` was only ever a spatial proxy for it. Distance is
 always the final tiebreak.
 
 Two of those are easy to confuse, deliberately: **`throughput` is the size class**

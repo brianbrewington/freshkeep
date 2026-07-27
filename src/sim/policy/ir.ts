@@ -53,6 +53,16 @@ export const ORDERINGS: Record<string, Ordering> = {
   fastest: (c) => c.brick.decayRate,
   slowest: (c) => -c.brick.decayRate,
   'highest throughput': (c) => c.brick.throughput,
+  /**
+   * Round-robin. Under memoryless change the optimal policy is to bin bricks —
+   * by change rate, and by popularity once that matters — and round-robin within
+   * each bin at a rate set for that bin. PRIORITY tiers are the bins; this is the
+   * round-robin inside one. It is the ordering the theory actually asks for, and
+   * `BY nearest` was only ever a spatial proxy for it.
+   */
+  oldest: (c) => c.now - c.brick.lastSeen,
+  'least recently seen': (c) => c.now - c.brick.lastSeen,
+  newest: (c) => -(c.now - c.brick.lastSeen),
   'most valuable': (c) =>
     c.brick.throughput * (1 - c.brick.belief) * c.cfg.rankValue[c.band],
 };
